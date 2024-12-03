@@ -6,6 +6,9 @@ commands:
    Pareset:
       description: Reset players effects.
       usage: pareset <player>
+   reload:
+      description: Reloads config
+      usage: reload
 permissions:
   Potionarmor.pareset:
     default: op
