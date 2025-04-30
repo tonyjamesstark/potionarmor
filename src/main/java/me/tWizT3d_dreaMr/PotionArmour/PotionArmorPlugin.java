@@ -15,7 +15,6 @@ import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.Registry;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
@@ -23,25 +22,16 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.potion.PotionEffectType;
 
 public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     public Logger logger = getLogger();
     public static PotionArmorPlugin plugin;
     public FileConfiguration config;
     public FileConfiguration lang;
-    // public static List<FileConfiguration> moreEffectsConfig; // to add for
-    // 'effects/' dir
+    // public static List<FileConfiguration> moreEffectsConfig; to add for 'effects/' dir
     private File config_dir;
     public EventListener listener;
     public EffectManager manager;
-    public List<NamespacedKey> supportedEffects = new ArrayList<NamespacedKey>();
-
-    // check out java.util.concurrent.Executors#newFixedThreadPool
-    // probably a ThreadPoolExecutor with corePoolSize=4 ish, maximumPoolSize=20ish,
-    // keepAliveTime=30 timeunit=second, blockingqueue =
-    // ArrayBlockingQueue<Runnable> capacity = 200 ish?, fair=true,
-    // likely put this in the plugin
 
     // need to periodically purge cancelled tasks?
 
@@ -54,7 +44,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     @Override
     public void onEnable() {
         plugin = this;
-        setSupportedEffects(); // TODO: add config option to disable certain effects
+        EffectManager.setSupportedEffects();
         config_dir = getDataFolder();
         reloadConfigs(false);
 
@@ -64,7 +54,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         Runnable job = () -> {
             int loaded = manager.loadEffects(config);
             System.out.println(loaded + " effects loaded");
-            // manager.loadEffects(moreEffectsConfig); // to add for 'effects/' dir
+            // manager.loadEffects(moreEffectsConfig); to add for 'effects/' dir
         };
         Bukkit.getScheduler().runTask(this, job);
         // load effects later so PlayerParticles has a chance to populate its lookup tables
@@ -73,8 +63,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         if (workAsync) {
             opt = AsyncOptions.fromConfig(config);
             workQueue = new ArrayBlockingQueue<Runnable>(opt.queueCapacity);
-            pool = new ThreadPoolExecutor(
-                    opt.nThreads, opt.maxThreads, opt.timeout, opt.timeUnit, workQueue);
+            pool = new ThreadPoolExecutor(opt.nThreads, opt.maxThreads, opt.timeout, opt.timeUnit, workQueue);
             acceptNewJobs = true;
         }
         Bukkit.getPluginManager().registerEvents(listener, this);
@@ -88,28 +77,14 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         pool.close();
     }
 
-    public void setSupportedEffects() {
-        setSupportedEffects(new ArrayList<NamespacedKey>());
-    }
-
-    public void setSupportedEffects(List<NamespacedKey> exclude) {
-        NamespacedKey tag;
-        for (PotionEffectType pe : Registry.EFFECT) {
-            tag = pe.getKey();
-            if (!exclude.contains(tag)) {
-                supportedEffects.add(tag);
-            }
-        }
-    }
-
     @Override
     public void saveConfig() {
         List<String> comments = new ArrayList<>(this.config.getComments("SupportedEffects"));
 
         // ensure effects list in comments
-        if (!comments.contains(supportedEffects.get(0).toString())) {
+        if (!comments.contains(EffectManager.supportedEffects.get(0).toString())) {
             comments.add(lang.getString("supported_effects"));
-            for (NamespacedKey k : supportedEffects) {
+            for (NamespacedKey k : EffectManager.supportedEffects) {
                 comments.add(k.toString());
             }
             this.config.setComments("SupportedEffects", comments);
@@ -126,8 +101,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     }
 
     /**
-     * {@code checkPerms} defaults to
-     * {@link PotionArmorPlugin#checkPerms(CommandSender, String, boolean)}
+     * {@code checkPerms} defaults to {@link PotionArmorPlugin#checkPerms(CommandSender, String, boolean)}
      * 
      * @see PotionArmorPlugin#checkPerms(CommandSender, String, boolean)
      */
@@ -138,8 +112,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     /**
      * Check permissions
      *
-     * @param p           who to check permission for
-     * @param perm        the permission string
+     * @param p who to check permission for
+     * @param perm the permission string
      * @param onlyPlayers whether to ignore (return true for) nonplayers
      * @return whether 'p' has permission 'perm'
      */
@@ -190,6 +164,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             this.config = getConfig();
         }
 
+        EffectManager.setSupportedEffects();
+
         // TODO: check version and convert to new format
 
         File lang_loc = new File(config_dir, this.config.getString("meta.language_loc"));
@@ -229,11 +205,9 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         }
 
         // TODO: does this take too long based on our offline player list...?
-        // alternatively loop through online players, or try-catch creating online
-        // player
+        // alternatively loop through online players, or try-catch creating online player
         // TODO: fuzzy searching functionality was removed, consider re-adding
-        OfflinePlayer p = Bukkit.getOfflinePlayer(
-                Bukkit.getServer().createPlayerProfile(args[0]).getUniqueId());
+        OfflinePlayer p = Bukkit.getOfflinePlayer(Bukkit.getServer().createPlayerProfile(args[0]).getUniqueId());
 
         if (p.isOnline()) {
             manager.resetPlayerEffects(p.getPlayer());
@@ -250,7 +224,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             return true;
 
         String msg = lang.getString("supported_effects");
-        for (NamespacedKey k : supportedEffects) {
+        for (NamespacedKey k : EffectManager.supportedEffects) {
             msg += k.toString() + ", ";
         }
         msg = msg.substring(0, msg.length() - 2); // clip final comma
@@ -292,8 +266,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         TimeUnit timeUnit;
         int queueCapacity;
 
-        public AsyncOptions(int nThreads, int maxThreads,
-                long timeout, TimeUnit timeUnit, int queueCapacity) {
+        public AsyncOptions(int nThreads, int maxThreads, long timeout, TimeUnit timeUnit, int queueCapacity) {
             this.nThreads = nThreads;
             this.maxThreads = maxThreads;
             this.timeout = timeout;
@@ -311,8 +284,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             try {
                 timeUnit = TimeUnit.valueOf(timeUnitString);
             } catch (IllegalArgumentException e) {
-                ((PotionArmorPlugin) PotionArmorPlugin.plugin).logger.log(
-                        Level.SEVERE, "Invalid timeout units in meta: " + timeUnitString);
+                ((PotionArmorPlugin) PotionArmorPlugin.plugin).logger.log(Level.SEVERE,
+                        "Invalid timeout units in meta: " + timeUnitString);
             }
             int queueCapacity = meta.getInt("capacity", 200);
             return new AsyncOptions(nThreads, maxThreads, timeout, timeUnit, queueCapacity);
@@ -327,8 +300,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             try {
                 pool.execute(job);
             } catch (RejectedExecutionException e) {
-                logger.log(Level.SEVERE,
-                        "Job queue is full, rejecting event...try increasing capcaity");
+                logger.log(Level.SEVERE, "Job queue is full, rejecting event...try increasing capcaity");
             }
         }
     }

@@ -7,10 +7,13 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.inventory.EquipmentSlotGroup;
+
+import me.tWizT3d_dreaMr.PotionArmour.EffectManager;
 
 public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cloneable {
 
@@ -30,10 +33,18 @@ public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cl
 		}
 		switch (s.getString("type")) {
 			case "trail":
+				if (!EffectManager.isEnabled.get(EffectType.TRAIL))
+					return null;
 				return TrailEffect.fromConfig(slot, s);
 			case "effect":
+				if (!EffectManager.isEnabled.get(EffectType.POTION) ||
+						!EffectManager.supportedEffects.contains(
+								NamespacedKey.fromString(s.getString("effect"))))
+					return null;
 				return PotionEffect.fromConfig(slot, s);
 			case "disguise":
+				if (!EffectManager.isEnabled.get(EffectType.DISGUISE))
+					return null;
 				return DisguiseEffect.fromConfig(slot, s);
 			default:
 				return null;

@@ -19,6 +19,9 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 
 import dev.esophose.playerparticles.api.PlayerParticlesAPI;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect;
@@ -31,6 +34,8 @@ public class EffectManager {
 	private final String LORE_DELIM = "|";
 
 	public static Map<EffectType, Boolean> isEnabled = new HashMap<>();
+
+	public static List<NamespacedKey> supportedEffects = new ArrayList<>();
 
 	// loreline --> effects list
 	private static Map<String, List<EquipmentEffect>> effectsTable = new HashMap<String, List<EquipmentEffect>>();
@@ -233,6 +238,20 @@ public class EffectManager {
 	public void dump() {
 		System.out.println(effectsTable);
 		System.out.println(loreCache);
+	}
+
+	public static void setSupportedEffects() {
+		setSupportedEffects(new ArrayList<NamespacedKey>());
+	}
+
+	public static void setSupportedEffects(List<NamespacedKey> exclude) {
+		NamespacedKey tag;
+		for (PotionEffectType pe : Registry.EFFECT) {
+			tag = pe.getKey();
+			if (!exclude.contains(tag)) {
+				supportedEffects.add(tag);
+			}
+		}
 	}
 
 }
