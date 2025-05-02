@@ -53,7 +53,7 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
 
         Runnable job = () -> {
             int loaded = manager.loadEffects(config);
-            System.out.println(loaded + " effects loaded");
+            logger.info(loaded + " effects loaded");
             // manager.loadEffects(moreEffectsConfig); to add for 'effects/' dir
         };
         Bukkit.getScheduler().runTask(this, job);

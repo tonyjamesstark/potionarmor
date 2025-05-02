@@ -14,6 +14,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.inventory.EquipmentSlotGroup;
 
 import me.tWizT3d_dreaMr.PotionArmour.EffectManager;
+import me.tWizT3d_dreaMr.PotionArmour.PotionArmorPlugin;
 
 public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cloneable {
 
@@ -27,24 +28,24 @@ public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cl
 
 	public abstract String toString();
 
-	public static EquipmentEffect parseEffect(ConfigurationSection s, EquipmentSlotGroup slot) {
+	public static EquipmentEffect parseEffect(ConfigurationSection s, EquipmentSlotGroup slot) throws DisabledEffectTypeException{
 		if (!s.getBoolean("enable")) {
 			return null; // this check should be redundant
 		}
 		switch (s.getString("type")) {
 			case "trail":
 				if (!EffectManager.isEnabled.get(EffectType.TRAIL))
-					return null;
+					throw new DisabledEffectTypeException();
 				return TrailEffect.fromConfig(slot, s);
 			case "effect":
 				if (!EffectManager.isEnabled.get(EffectType.POTION) ||
 						!EffectManager.supportedEffects.contains(
 								NamespacedKey.fromString(s.getString("effect"))))
-					return null;
+					throw new DisabledEffectTypeException();
 				return PotionEffect.fromConfig(slot, s);
 			case "disguise":
 				if (!EffectManager.isEnabled.get(EffectType.DISGUISE))
-					return null;
+					throw new DisabledEffectTypeException();
 				return DisguiseEffect.fromConfig(slot, s);
 			default:
 				return null;
@@ -63,9 +64,15 @@ public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cl
 			if (!effectSection.getBoolean("enable")) {
 				continue;
 			}
-			EquipmentEffect e = EquipmentEffect.parseEffect(effectSection, slot);
+			EquipmentEffect e = null;
+			try{
+				e = EquipmentEffect.parseEffect(effectSection, slot);
+			} catch(DisabledEffectTypeException err){
+				PotionArmorPlugin.plugin.logger.finest("Skipped loading effect, type disabled. " + effectSection.toString());
+				continue;
+			}
 			if (e == null) {
-				logger.log(Level.SEVERE, "Malformed effect in config: " + effectName);
+				logger.severe("Malformed effect in config: " + effectName);
 				continue;
 			}
 			effects.add(e);
@@ -107,5 +114,15 @@ public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cl
 		POTION,
 		TRAIL,
 		DISGUISE
+	}
+
+	public static class DisabledEffectTypeException extends Exception{
+		public DisabledEffectTypeException(){
+			this("Disabled effect type");
+		}
+
+		public DisabledEffectTypeException(String message){
+			super(message);
+		}
 	}
 }

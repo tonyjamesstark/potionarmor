@@ -56,17 +56,22 @@ public class EffectManager {
 		if (!Bukkit.getPluginManager().isPluginEnabled("PlayerParticles")) {
 			// ppAPI = PlayerParticlesAPI.getInstance();
 			// } else {
-			p.logger.log(Level.SEVERE, "PlayerParticles is not loaded, trail support will not be active.");
+			p.logger.info("PlayerParticles is not loaded, trail support will be disabled.");
 			isEnabled.put(EffectType.TRAIL, false);
 		}
 
 		if (!Bukkit.getPluginManager().isPluginEnabled("libsdisguises")) {
-			p.logger.log(Level.SEVERE, "libsdisguises is not loaded, disguise support will not be active.");
+			p.logger.info("libsdisguises is not loaded, disguise support will be disabled.");
 			isEnabled.put(EffectType.DISGUISE, false);
 		}
 	}
 
 	public int loadEffects(FileConfiguration cfg) {
+		for(EffectType t : isEnabled.keySet()){
+			if(t != EffectType.BASE && !isEnabled.get(t)){
+				p.logger.info("Effect type " + t.toString() + " not enabled, skipping these effects in config");
+			}
+		}
 		Map<String, List<EquipmentEffect>> loaded = EquipmentEffect.effectsFromConfig(cfg, p.logger);
 		effectsTable.putAll(loaded);
 		return loaded.size();
@@ -154,7 +159,7 @@ public class EffectManager {
 					}
 
 					if (!isEnabled.get(EquipmentEffect.getType(eff))) {
-						System.out.println("Type not enabled: " + eff.toString());
+						PotionArmorPlugin.plugin.logger.severe("Type not enabled: " + eff.toString());
 						continue;
 					}
 
