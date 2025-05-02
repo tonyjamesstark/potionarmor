@@ -13,6 +13,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -190,7 +191,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
                 sender.sendMessage(this.lang.getString("change_async"));
             }
         }
-        sender.sendMessage(this.lang.getString("config_reload"));
+
+        sender.sendMessage(ChatColor.GREEN + "[potionarmor] " + this.lang.getString("config_reload"));
         return true;
     }
 

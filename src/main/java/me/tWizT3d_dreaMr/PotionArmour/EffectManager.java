@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Entity;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
@@ -26,7 +27,9 @@ import org.bukkit.Registry;
 import dev.esophose.playerparticles.api.PlayerParticlesAPI;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect.EffectType;
-import net.md_5.bungee.api.ChatColor;
+import org.bukkit.ChatColor;
+import me.libraryaddict.disguise.DisguiseAPI;
+
 
 public class EffectManager {
 	PotionArmorPlugin p;
@@ -56,12 +59,12 @@ public class EffectManager {
 		if (!Bukkit.getPluginManager().isPluginEnabled("PlayerParticles")) {
 			// ppAPI = PlayerParticlesAPI.getInstance();
 			// } else {
-			p.logger.info("PlayerParticles is not loaded, trail support will be disabled.");
+			p.logger.warning("PlayerParticles is not loaded, trail support will be disabled.");
 			isEnabled.put(EffectType.TRAIL, false);
 		}
 
 		if (!Bukkit.getPluginManager().isPluginEnabled("libsdisguises")) {
-			p.logger.info("libsdisguises is not loaded, disguise support will be disabled.");
+			p.logger.warning("libsdisguises is not loaded, disguise support will be disabled.");
 			isEnabled.put(EffectType.DISGUISE, false);
 		}
 	}
@@ -96,8 +99,12 @@ public class EffectManager {
 
 			// bukkit methods must be run on main thread
 			Callable<Void> forMain = () -> {
-				_p.clearActivePotionEffects(); // TODO: fix - clears other (drunk) potion effects
-				PlayerParticlesAPI.getInstance().resetActivePlayerParticles(_p);
+				if(isEnabled.get(EffectType.POTION))
+					_p.clearActivePotionEffects(); // TODO: fix - clears other (drunk) potion effects
+				if(isEnabled.get(EffectType.TRAIL))
+					PlayerParticlesAPI.getInstance().resetActivePlayerParticles(_p);
+				if(isEnabled.get(EffectType.DISGUISE))
+					DisguiseAPI.undisguiseToAll((Entity) _p);
 				return null;
 			};
 			Future<Void> _task = Bukkit.getServer().getScheduler().callSyncMethod(
