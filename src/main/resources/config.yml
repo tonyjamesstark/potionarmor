@@ -16,6 +16,9 @@
 # see effects at https://github.com/Rosewood-Development/PlayerParticles/blob/master/src/main/java/dev/esophose/playerparticles/particles/ParticleEffect.java
 # see styles at https://github.com/Rosewood-Development/PlayerParticles/blob/master/src/main/java/dev/esophose/playerparticles/styles/DefaultStyles.java
 # ---
+# slot can be any of EquipmentSlotGroup
+# see https://hub.spigotmc.org/javadocs/spigot/org/bukkit/inventory/EquipmentSlotGroup.html
+# as of 10/2025, they include: [any, armor, chest, feet hand, head, legs, mainhand, offhand, saddle]
 
 meta:
   language_loc: language.yml

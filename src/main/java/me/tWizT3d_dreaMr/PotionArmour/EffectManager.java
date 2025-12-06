@@ -192,9 +192,10 @@ public class EffectManager {
 			linesWithEffects = loreCache.get(loreKey);
 		} else {
 			for (String line : lore) {
-				if (!effectsTable.containsKey(line))
+				String line_strip = line.strip();
+				if (!effectsTable.containsKey(line_strip))
 					continue;
-				linesWithEffects.add(line);
+				linesWithEffects.add(line_strip);
 			}
 			loreCache.put(loreKey, linesWithEffects);
 		}
