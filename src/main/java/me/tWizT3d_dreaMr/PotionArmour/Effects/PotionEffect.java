@@ -53,7 +53,8 @@ public class PotionEffect extends EquipmentEffect {
 
 	public static PotionEffect fromConfig(EquipmentSlotGroup slot, ConfigurationSection s) {
 		NamespacedKey key = NamespacedKey.fromString(s.getString("effect"));
-		return new PotionEffect(slot, Registry.EFFECT.get(key), s.getInt("level", 0));
+		return new PotionEffect(slot, Registry.EFFECT.get(key), s.getInt("level", 0) - 1);
+		// potion "level" starts at 0 (corresponds to potion level I)
 	}
 
 	@Override
