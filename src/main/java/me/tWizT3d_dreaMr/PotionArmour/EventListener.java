@@ -66,7 +66,10 @@ public class EventListener implements Listener {
         }
         final Player p = (Player) e.getWhoClicked();
         ItemStack n = e.getCurrentItem();
-        ItemStack o = e.getInventory().getItem(e.getSlot());
+        ItemStack o = null;
+        if(e.getSlot() < e.getInventory().getSize()){
+            o = e.getInventory().getItem(e.getSlot());
+        }
         mgr.replaceEquipment(p, n, o, slot);
     }
 
