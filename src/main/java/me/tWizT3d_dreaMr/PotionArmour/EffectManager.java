@@ -249,8 +249,8 @@ public class EffectManager {
 	 * Dump contents of cache and effectsTable to logs for debugging
 	 */
 	public void dump() {
-		System.out.println(effectsTable);
-		System.out.println(loreCache);
+		p.logger.info(effectsTable.toString());
+		p.logger.info(loreCache.toString());
 	}
 
 	public static void setSupportedEffects() {

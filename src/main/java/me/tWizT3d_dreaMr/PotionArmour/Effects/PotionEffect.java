@@ -22,7 +22,8 @@ public class PotionEffect extends EquipmentEffect {
 
 	public PotionEffect(EquipmentSlotGroup slot, PotionEffectType eff, int _level) {
 		this.slot = slot;
-		effect = eff.createEffect(MAX_DURATION, _level);
+		effect = eff.createEffect(MAX_DURATION, _level).withDuration(MAX_DURATION);
+		// for some reason saturation constructor overrides durration...this is a bit of a hack
 		level = _level;
 		str = "CE " + eff.toString();
 	}
@@ -54,7 +55,7 @@ public class PotionEffect extends EquipmentEffect {
 	public static PotionEffect fromConfig(EquipmentSlotGroup slot, ConfigurationSection s) {
 		NamespacedKey key = NamespacedKey.fromString(s.getString("effect"));
 		return new PotionEffect(slot, Registry.EFFECT.get(key), s.getInt("level", 0) - 1);
-		// potion "level" starts at 0 (corresponds to potion level I)
+		// potion "level" starts at 0 (corresponds)
 	}
 
 	@Override
