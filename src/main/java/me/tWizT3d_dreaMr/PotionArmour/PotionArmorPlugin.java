@@ -5,9 +5,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
+// import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -36,8 +36,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
 
     // need to periodically purge cancelled tasks?
 
-    private ThreadPoolExecutor pool;
-    private ArrayBlockingQueue<Runnable> workQueue;
+    private ScheduledThreadPoolExecutor pool;
+    // private ArrayBlockingQueue<Runnable> workQueue;
     private AsyncOptions opt;
     private boolean workAsync;
     private boolean acceptNewJobs = false;
@@ -63,8 +63,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         workAsync = config.getBoolean("meta.async");
         if (workAsync) {
             opt = AsyncOptions.fromConfig(config);
-            workQueue = new ArrayBlockingQueue<Runnable>(opt.queueCapacity);
-            pool = new ThreadPoolExecutor(opt.nThreads, opt.maxThreads, opt.timeout, opt.timeUnit, workQueue);
+            // workQueue = new ArrayBlockingQueue<Runnable>(opt.queueCapacity);
+            pool = new ScheduledThreadPoolExecutor(opt.nThreads);
             acceptNewJobs = true;
         }
         Bukkit.getPluginManager().registerEvents(listener, this);
@@ -295,12 +295,16 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     }
 
     public void submitAsyncTask(Runnable job) {
+        submitAsyncTaskLater(job, 0, TimeUnit.SECONDS);
+    }
+
+    public void submitAsyncTaskLater(Runnable job, long delay, TimeUnit unit) {
         if (!workAsync) {
             job.run(); // blocks
         }
         if (acceptNewJobs) {
             try {
-                pool.execute(job);
+                pool.schedule(job, delay, unit);
             } catch (RejectedExecutionException e) {
                 logger.log(Level.SEVERE, "Job queue is full, rejecting event...try increasing capcaity");
             }

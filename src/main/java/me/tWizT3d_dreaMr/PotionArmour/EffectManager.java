@@ -219,6 +219,33 @@ public class EffectManager {
 		if (!loreCache.containsKey(key))
 			return;
 		removeEffects(_p, loreCache.get(key));
+		// TODO - bug: need to add back any overlapping effects from other equipment
+		// search over player equipment
+			// search over lore lines
+				// if any have duplicated effects
+					// addEquipment(_p, existingEquipment)
+
+		// this is too annoying
+		// just reapply existing equipment effects
+		refreshAppliedEquipment(_p);
+	}
+
+	public void refreshAppliedEquipment(Player _p){
+		// TODO factor this (code adapted from resetPlayerEffects)
+		Callable<Void> task = () -> {
+			PlayerInventory inv = _p.getInventory();
+			List<ItemStack> equipment = new ArrayList<ItemStack>();
+			equipment.addAll(Arrays.asList(inv.getArmorContents())); // in order, boots, legs, chest, helmet
+			equipment.add(inv.getItemInMainHand());
+			equipment.add(inv.getItemInOffHand());
+
+			for (int i = 0; i < equipment.size(); i++) {
+				addEquipment(_p, equipment.get(i), slots[i]);
+			}
+			return null;
+		};
+		FutureTask<Void> job = new FutureTask<>(task);
+		p.submitAsyncTaskLater(job, 20, TimeUnit.MILLISECONDS);
 	}
 
 	public void replaceEquipment(Player _p, ItemStack _new, ItemStack _old, EquipmentSlot slot) {
