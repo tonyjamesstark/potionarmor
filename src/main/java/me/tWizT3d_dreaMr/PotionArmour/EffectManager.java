@@ -28,6 +28,7 @@ import dev.esophose.playerparticles.api.PlayerParticlesAPI;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect.EffectType;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import me.libraryaddict.disguise.DisguiseAPI;
 
 
@@ -213,24 +214,36 @@ public class EffectManager {
 
 	private void removeEquipment(Player _p, ItemStack i, boolean apply) {
 		List<String> lore = getLore(i);
-		if (lore == null || _p == null)
+		if (i == null || i.getType() == Material.AIR || lore == null || _p == null)
 			return;
 		String key = loreKey(lore);
 		if (!loreCache.containsKey(key))
 			return;
 		removeEffects(_p, loreCache.get(key));
-		// TODO - bug: need to add back any overlapping effects from other equipment
-		// search over player equipment
-			// search over lore lines
-				// if any have duplicated effects
-					// addEquipment(_p, existingEquipment)
 
-		// this is too annoying
-		// just reapply existing equipment effects
-		refreshAppliedEquipment(_p);
+		// reapply any overlapping effects
+		// TODO: properly find appropriate effects to apply. currently just reapplying all potion effects
+		ArrayList<ItemStack> equipped = new ArrayList<>();
+		equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
+		equipped.add(_p.getInventory().getItemInMainHand());
+		equipped.add(_p.getInventory().getItemInOffHand());
+		for(ItemStack j: equipped){
+			List<String> _lore = getLore(j);
+			if(_lore == null){
+				continue;
+			}
+			for(String loreline: loreCache.get(loreKey(_lore))){
+				for(EquipmentEffect eff: effectsTable.get(loreline)){
+					if(EquipmentEffect.getType(eff) == EquipmentEffect.EffectType.POTION){
+						eff.applyTo(_p);
+					}
+				}
+			}
+		}
 	}
 
-	public void refreshAppliedEquipment(Player _p){
+	public void refreshAppliedEquipment(Player _p, ItemStack toExclude){
+		// this only re-applies effects from equipment, it does not remove effects
 		// TODO factor this (code adapted from resetPlayerEffects)
 		Callable<Void> task = () -> {
 			PlayerInventory inv = _p.getInventory();
@@ -240,7 +253,11 @@ public class EffectManager {
 			equipment.add(inv.getItemInOffHand());
 
 			for (int i = 0; i < equipment.size(); i++) {
-				addEquipment(_p, equipment.get(i), slots[i]);
+				ItemStack toAdd = equipment.get(i);
+				if((toExclude != null) && (toAdd.isSimilar(toExclude))){
+					continue;
+				}
+				addEquipment(_p, toAdd, slots[i]);
 			}
 			return null;
 		};
@@ -292,6 +309,34 @@ public class EffectManager {
 				supportedEffects.add(tag);
 			}
 		}
+	}
+
+	// THIS IS A KLUDGE BECAUSE ESSENTIALS DOES NOT THROW EVENTS
+	// AND YOU CAN'T LISTEN TO PROGRAMATIC INVENTORY CHANGES :(
+	public void hatCommand(Player _p){
+		ItemStack oldHat = _p.getInventory().getHelmet();
+		ItemStack oldMain = _p.getInventory().getItemInMainHand();
+		Callable<Void> task = () -> {
+			ItemStack newHat = _p.getInventory().getHelmet();
+			ItemStack newMain = _p.getInventory().getItemInMainHand();
+			if(!(newHat.isSimilar(oldHat) && newMain.isSimilar(oldMain))){
+				// WHY IS THIS ERRORING?
+				// ADDEQUIPMENT() SHOULD CALL MAIN THREAD
+				// bukkit methods must be run on main thread
+				Callable<Void> mainTask = () -> {
+					removeEquipment(_p, oldHat);
+					removeEquipment(_p, oldMain);
+					addEquipment(_p, newHat, EquipmentSlot.HEAD);
+					addEquipment(_p, newMain, EquipmentSlot.HAND);
+					return null;
+				};
+				Bukkit.getServer().getScheduler().callSyncMethod(
+						PotionArmorPlugin.plugin, mainTask);
+			}
+			return null;
+		};
+		FutureTask<Void> job = new FutureTask<Void>(task);
+		p.submitAsyncTaskLater(job, 40, TimeUnit.MILLISECONDS);
 	}
 
 }
