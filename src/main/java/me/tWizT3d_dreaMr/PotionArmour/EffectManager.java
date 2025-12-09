@@ -232,7 +232,7 @@ public class EffectManager {
 			if(_lore == null){
 				continue;
 			}
-			for(String loreline: loreCache.get(loreKey(_lore))){
+			for(String loreline: getCached(_lore)){
 				for(EquipmentEffect eff: effectsTable.get(loreline)){
 					if(EquipmentEffect.getType(eff) == EquipmentEffect.EffectType.POTION){
 						eff.applyTo(_p);
