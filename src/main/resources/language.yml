@@ -4,7 +4,8 @@
 config_reload: "config reloaded"
 no_perms: "&cNo permission."
 invalid_command: "&cPlease check your command"
-failed_save: "Cannot save file, exists: "
+failed_save: "Error saving config"
+failed_save_file_exists: "Error saving config, file exists: "
 supported_effects: "Supported effects include: "
 
 # not sure if good idea or necessary to have printing of the passed parameter

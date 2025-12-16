@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>potionarmor</groupId>
   <artifactId>potionarmor</artifactId>
-  <version>3.0.6</version>
+  <version>3.0.7</version>
 
   <repositories>
     <repository>
@@ -19,8 +19,10 @@
       <id>md_5-public</id>
       <url>https://repo.md-5.net/content/groups/public/</url>
     </repository>
-
-
+    <repository>
+      <id>oss.sonatype.org</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+    </repository>
   </repositories>
 
   <dependencies>
@@ -42,12 +44,28 @@
       <version>11.0.0</version>
       <scope>provided</scope>
     </dependency>
+<!--     <dependency>
+      <groupId>com.jcabi</groupId>
+      <artifactId>jcabi-aspects</artifactId>
+      <version>0.26.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.aspectj</groupId>
+      <artifactId>aspectjrt</artifactId>
+      <version>1.9.25</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-aspects</artifactId>
+      <version>7.0.2</version> 
+   </dependency> -->
   </dependencies>
 
 
   <build>
     <finalName>${project.artifactId}-${project.version}</finalName>
-    <defaultGoal>clean package</defaultGoal>
+    <!-- <defaultGoal>clean spotless:check jcabi:ajc package</defaultGoal> -->
+    <defaultGoal>spotless:check package</defaultGoal>
     <resources>
       <resource>
         <filtering>true</filtering>
@@ -108,6 +126,18 @@
           </java>
         </configuration>
       </plugin>
+<!--       <plugin>
+        <groupId>com.jcabi</groupId>
+        <artifactId>jcabi-maven-plugin</artifactId>
+        <version>0.17.0</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>ajc</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin> -->
     </plugins>
   </build>
 

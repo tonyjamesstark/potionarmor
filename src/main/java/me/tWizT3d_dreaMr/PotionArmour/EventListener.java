@@ -1,13 +1,15 @@
 /* (C)2024 */
 package me.tWizT3d_dreaMr.PotionArmour;
 
-import org.bukkit.entity.LivingEntity;
+import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent;
+import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent.SlotType;
+import java.util.logging.Level;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
@@ -15,8 +17,6 @@ import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
-import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent;
-import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent.SlotType;
 
 @SuppressWarnings("deprecation")
 public class EventListener implements Listener {
@@ -31,6 +31,7 @@ public class EventListener implements Listener {
 
     @EventHandler
     public void changeArmor(PlayerArmorChangeEvent e) {
+        PotionArmorPlugin.plugin.logger.info("changeArmor called");
         ItemStack n = e.getNewItem();
         ItemStack o = e.getOldItem();
         Player p = (Player) e.getPlayer();
@@ -53,16 +54,26 @@ public class EventListener implements Listener {
                 slot = EquipmentSlot.HAND;
         }
         this.mgr.replaceEquipment(p, n, o, slot);
+        // mgr.resetPlayerEffects(e.getPlayer());
+    }
+
+    @EventHandler
+    public void changeWorld(PlayerChangedWorldEvent e) {
+        PotionArmorPlugin.plugin.logger.info("changeWorld called");
+        mgr.resetPlayerEffects(e.getPlayer());
     }
 
     // inventory click
     @EventHandler
     public void invClick(InventoryClickEvent e) {
+        PotionArmorPlugin.plugin.logger.info("invClick called");
         EquipmentSlot slot = null;
         if (e.getSlot() == e.getWhoClicked().getInventory().getHeldItemSlot()) {
             slot = EquipmentSlot.HAND;
-        } else if (e.getSlot() == UNKNOWN_SLOT_NUM) { // TODO: see above, figure out magic number, likely the offhand
-                                                      // slot?
+        } else if (e.getSlot()
+                == UNKNOWN_SLOT_NUM) { // TODO: see above, figure out magic number, likely the
+            // offhand
+            // slot?
             slot = EquipmentSlot.OFF_HAND;
         } else {
             return; // only act on specific slots
@@ -78,6 +89,7 @@ public class EventListener implements Listener {
     // hotbar
     @EventHandler
     public void newItemHeld(PlayerItemHeldEvent e) {
+        PotionArmorPlugin.plugin.logger.info("newItemHeld called");
         final Player p = e.getPlayer();
         final PlayerInventory inv = p.getInventory();
         ItemStack n = inv.getItem(e.getNewSlot());
@@ -88,6 +100,7 @@ public class EventListener implements Listener {
     // drop
     @EventHandler
     public void drop(PlayerDropItemEvent e) {
+        PotionArmorPlugin.plugin.logger.info("drop called");
         final Player p = e.getPlayer();
         ItemStack o = e.getItemDrop().getItemStack();
         mgr.removeEquipment(p, o); // TODO: this might remove more effects than it should
@@ -108,7 +121,7 @@ public class EventListener implements Listener {
 
     //     }
 
-    //     // TODO: if performance is suffering, 
+    //     // TODO: if performance is suffering,
     //     // can optionally check if the item ended up in main hand and act on only that
     //     // mgr.refreshAppliedEquipment(p, null);
     // }
@@ -116,6 +129,7 @@ public class EventListener implements Listener {
     // armor stand use
     @EventHandler
     public void armorStandInteract(PlayerArmorStandManipulateEvent e) { // PlayerInteractEntityEvent
+        PotionArmorPlugin.plugin.logger.info("armorStandInteract called");
         final Player p = e.getPlayer();
         ItemStack n = e.getArmorStandItem();
         ItemStack o = e.getPlayerItem();
@@ -125,6 +139,8 @@ public class EventListener implements Listener {
 
     @EventHandler
     public void gamemode(PlayerGameModeChangeEvent e) {
+        PotionArmorPlugin.plugin.logger.info("gamemode called");
+        PotionArmorPlugin.plugin.logger.log(Level.FINE, "gamemode called");
         mgr.resetPlayerEffects(e.getPlayer());
     }
 
@@ -133,12 +149,12 @@ public class EventListener implements Listener {
     // and there's no way to listen for programatic changes to inventory
     // so its a kludge...
     @EventHandler
-    public void hatPostCheck(PlayerCommandPreprocessEvent e){
-        if(e.getMessage().contains("/hat") && e.getPlayer().hasPermission("essentials.hat")){
+    public void hatPostCheck(PlayerCommandPreprocessEvent e) {
+        PotionArmorPlugin.plugin.logger.info("hatPostCheck called");
+        if (e.getMessage().contains("/hat") && e.getPlayer().hasPermission("essentials.hat")) {
             mgr.hatCommand(e.getPlayer());
         }
     }
-
 
     // check swap hands commands
 

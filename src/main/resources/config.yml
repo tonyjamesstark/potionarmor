@@ -26,10 +26,11 @@ meta:
   # async-multithreading options:
   async: true
   threads: 4
-  maxThreads: 10
-  capacity: 200 # thread queue job capacity, will reject new jobs after full
-  timeout: 60 # how long to wait before killing idle threads
-  unit: SECONDS # timeout time unit
+  # maxThreads: 10
+  # capacity: 200 # thread queue job capacity, will reject new jobs after full
+  # timeout: 60 # how long to wait before killing idle threads
+  # unit: SECONDS # timeout time unit
+  log_level: INFO
 
 SupportedEffects: ""
 
