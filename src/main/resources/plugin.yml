@@ -5,8 +5,8 @@ main: me.tWizT3d_dreaMr.PotionArmour.PotionArmorPlugin
 softdepend: [libsdisguises, PlayerParticles]
 commands:
   Pareset:
-    description: Reset players effects.
-    usage: pareset <player>
+    description: Reset players effects. Use without args to reset yourself.
+    usage: /pareset [player]
   reload:
     description: Reloads config
     usage: reload
@@ -19,7 +19,10 @@ commands:
 permissions:
   Potionarmor.pareset:
     default: op
-    description: Allows the player to Pareset.
+    description: Allows resetting other players' effects.
+  Potionarmor.pareset.self:
+    default: true
+    description: Allows players to reset their own effects.
   Potionarmor.reload:
     default: op
     description: Allows reloading of the plugin config

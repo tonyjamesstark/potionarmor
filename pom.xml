@@ -4,8 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>potionarmor</groupId>
   <artifactId>potionarmor</artifactId>
-  <version>3.0.8</version>
-
+  <version>3.1.0</version>
   <repositories>
     <repository>
       <id>papermc</id>
@@ -22,6 +21,11 @@
     <repository>
       <id>oss.sonatype.org</id>
       <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+    </repository>
+    <!-- JitPack for libraries not in standard repos -->
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
     </repository>
   </repositories>
 

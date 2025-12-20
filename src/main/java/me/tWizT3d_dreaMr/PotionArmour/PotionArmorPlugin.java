@@ -47,6 +47,12 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
 
     // private final int DEFAULT_NTHREADS = 4;
 
+    // Task ID for the periodic validation task
+    private int validationTaskId = -1;
+
+    // Validation interval in ticks (default: 30 seconds = 600 ticks)
+    private static final long VALIDATION_INTERVAL_TICKS = 600L;
+
     @Override
     public void onEnable() {
         plugin = this;
@@ -80,15 +86,53 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
 
                     // also enable action queue at later time
                     this.acceptNewJobs = this.workAsync;
+
+                    // Start the periodic validation task
+                    startValidationTask();
                 };
         Bukkit.getScheduler().runTask(this, job);
 
         Bukkit.getPluginManager().registerEvents(listener, this);
     }
 
+    /**
+     * Start the periodic validation task that catches edge cases
+     * where effects might persist incorrectly.
+     */
+    private void startValidationTask() {
+        // Cancel existing task if running
+        if (validationTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(validationTaskId);
+        }
+
+        validationTaskId =
+                Bukkit.getScheduler()
+                        .runTaskTimer(
+                                this,
+                                () -> {
+                                    for (Player p : Bukkit.getOnlinePlayers()) {
+                                        manager.validateAndFixPlayerEffects(p);
+                                    }
+                                },
+                                VALIDATION_INTERVAL_TICKS,
+                                VALIDATION_INTERVAL_TICKS)
+                        .getTaskId();
+        logger.info(
+                "Started periodic effect validation task (every "
+                        + (VALIDATION_INTERVAL_TICKS / 20)
+                        + " seconds)");
+    }
+
     @Override
     public void onDisable() {
         this.saveConfig(); // in case loaded default configs
+
+        // Cancel the validation task
+        if (validationTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(validationTaskId);
+            validationTaskId = -1;
+        }
+
         if (workAsync) cancelAllTasks();
         pool.close();
     }
@@ -243,6 +287,26 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     public boolean resetPlayer(CommandSender sender, String[] args) {
         logger.info("executing resetPlayer()...");
 
+        // Allow players to reset themselves without args
+        if (args.length == 0) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(lang.getString("invalid_command") + " Usage: /pareset <player>");
+                return true;
+            }
+            // Self-reset - requires basic permission
+            if (!checkPerms(sender, "Potionarmor.pareset.self", true)) return true;
+
+            Player self = (Player) sender;
+            manager.resetPlayerEffects(self);
+            sender.sendMessage(
+                    ChatColor.GREEN
+                            + "[PotionArmor] "
+                            + lang.getString("reset_notice")
+                            + self.getName());
+            return true;
+        }
+
+        // Resetting another player requires full permission
         if (!checkPerms(sender, "Potionarmor.pareset", false)) return true;
 
         if (args.length != 1) {

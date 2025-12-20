@@ -53,6 +53,20 @@ public class PotionEffect extends EquipmentEffect {
         return this.str;
     }
 
+    /**
+     * Get the underlying Bukkit PotionEffect.
+     */
+    public org.bukkit.potion.PotionEffect getEffect() {
+        return this.effect;
+    }
+
+    /**
+     * Get the potion effect type.
+     */
+    public org.bukkit.potion.PotionEffectType getEffectType() {
+        return this.effect.getType();
+    }
+
     public static PotionEffect fromConfig(EquipmentSlotGroup slot, ConfigurationSection s) {
         NamespacedKey key = NamespacedKey.fromString(s.getString("effect"));
         return new PotionEffect(slot, Registry.EFFECT.get(key), s.getInt("level", 0) - 1);
