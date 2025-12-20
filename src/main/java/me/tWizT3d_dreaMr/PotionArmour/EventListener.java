@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
@@ -68,6 +69,10 @@ public class EventListener implements Listener {
     public void invClick(InventoryClickEvent e) {
         PotionArmorPlugin.plugin.logger.info("invClick called");
         EquipmentSlot slot = null;
+        if (e.getSlotType() != InventoryType.SlotType.ARMOR
+                || e.getSlotType() != InventoryType.SlotType.QUICKBAR) {
+            return; // necessary because inventory slot numbers overlap
+        }
         if (e.getSlot() == e.getWhoClicked().getInventory().getHeldItemSlot()) {
             slot = EquipmentSlot.HAND;
         } else if (e.getSlot()
