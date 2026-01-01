@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>potionarmor</groupId>
   <artifactId>potionarmor</artifactId>
-  <version>3.1.0</version>
+  <version>3.1.1</version>
   <repositories>
     <repository>
       <id>papermc</id>
@@ -41,12 +41,14 @@
       <artifactId>playerparticles</artifactId>
       <version>8.8</version>
       <scope>provided</scope>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>me.libraryaddict.disguises</groupId>
       <artifactId>libsdisguises</artifactId>
       <version>11.0.0</version>
       <scope>provided</scope>
+      <optional>true</optional>
     </dependency>
 <!--     <dependency>
       <groupId>com.jcabi</groupId>
