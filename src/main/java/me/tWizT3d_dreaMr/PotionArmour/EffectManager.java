@@ -78,6 +78,77 @@ public class EffectManager {
         }
     }
 
+    /**
+     * Get detailed validation state for a player (for debugging).
+     * Shows current settings, equipment tracking, validation state, and effect comparison.
+     */
+    public String getValidationDebugInfo(Player _p) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Validation Debug Info for ").append(_p.getName()).append(":\n");
+
+        // Current settings
+        sb.append("  Settings:\n");
+        sb.append("    Cooldown: ").append(tracker.getValidationCooldownMs()).append("ms\n");
+        sb.append("    Strikes Required: ").append(validationStrikesRequired).append("\n");
+
+        // Equipment change tracking
+        long timeSince = tracker.getTimeSinceLastChange(_p);
+        sb.append("  Equipment:\n");
+        sb.append("    Time Since Change: ");
+        if (timeSince == Long.MAX_VALUE) {
+            sb.append("Never\n");
+        } else {
+            sb.append(timeSince).append("ms ago\n");
+        }
+        sb.append("    Within Cooldown: ")
+                .append(timeSince < tracker.getValidationCooldownMs())
+                .append("\n");
+
+        // Validation state
+        UUID uuid = _p.getUniqueId();
+        int strikes = validationFailureCount.getOrDefault(uuid, 0);
+        sb.append("  Validation:\n");
+        sb.append("    Current Strikes: ")
+                .append(strikes)
+                .append("/")
+                .append(validationStrikesRequired)
+                .append("\n");
+
+        // Effects
+        Set<String> tracked = tracker.getTrackedEffects(_p);
+        Set<String> expected = calculateExpectedEffects(_p);
+
+        sb.append("  Effects:\n");
+        sb.append("    Tracked (")
+                .append(tracked.size())
+                .append("): ")
+                .append(tracked)
+                .append("\n");
+        sb.append("    Expected (")
+                .append(expected.size())
+                .append("): ")
+                .append(expected)
+                .append("\n");
+
+        // Differences
+        Set<String> orphaned = new HashSet<>(tracked);
+        orphaned.removeAll(expected);
+        Set<String> missing = new HashSet<>(expected);
+        missing.removeAll(tracked);
+
+        if (!orphaned.isEmpty()) {
+            sb.append("    Orphaned: ").append(orphaned).append("\n");
+        }
+        if (!missing.isEmpty()) {
+            sb.append("    Missing: ").append(missing).append("\n");
+        }
+        if (orphaned.isEmpty() && missing.isEmpty()) {
+            sb.append("    Status: All effects match!\n");
+        }
+
+        return sb.toString();
+    }
+
     public EffectManager(PotionArmorPlugin _p) {
         p = _p;
 
@@ -489,7 +560,9 @@ public class EffectManager {
                             + _p.getName()
                             + " - equipment changed "
                             + timeSinceChange
-                            + "ms ago (within cooldown)");
+                            + "ms ago (cooldown: "
+                            + tracker.getValidationCooldownMs()
+                            + "ms)");
             return false;
         }
 
@@ -573,6 +646,14 @@ public class EffectManager {
                             + currentStrikes
                             + ")");
             validationFailureCount.put(uuid, 0);
+        } else {
+            // Log successful validation even with no prior strikes (at FINE level)
+            p.logger.fine(
+                    "Validation passed for "
+                            + _p.getName()
+                            + " - "
+                            + tracked.size()
+                            + " effects matched");
         }
 
         return corrected;

@@ -16,6 +16,10 @@ commands:
   debugDump:
     description: Print information useful for debugging
     usage: debugDump
+  debugValidation:
+    description: Show validation debug information for a player
+    usage: /debugValidation [player] [validate]
+    aliases: [debugval, dval]
 permissions:
   Potionarmor.pareset:
     default: op
