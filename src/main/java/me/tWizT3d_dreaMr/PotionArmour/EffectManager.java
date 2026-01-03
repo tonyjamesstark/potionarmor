@@ -29,8 +29,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffectType;
 
 public class EffectManager {
-    PotionArmorPlugin p;
-    // private PlayerParticlesAPI ppAPI;
+    PotionArmorPlugin plugin;
     private final String LORE_DELIM = "|";
 
     public static Map<EffectType, Boolean> isEnabled = new HashMap<>();
@@ -47,7 +46,6 @@ public class EffectManager {
 
     // full item lore --> relevant lore lines
     // (cache built up as items processed)
-    // TODO: schedule cache clears?
     private static Map<String, List<String>> loreCache = new HashMap<String, List<String>>();
 
     /**
@@ -61,13 +59,13 @@ public class EffectManager {
      * Get detailed validation state for a player (for debugging).
      * Shows tracked vs expected effects.
      */
-    public String getValidationDebugInfo(Player _p) {
+    public String getValidationDebugInfo(Player player) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Validation Debug Info for ").append(_p.getName()).append(":\n");
+        sb.append("Validation Debug Info for ").append(player.getName()).append(":\n");
 
         // Effects
-        Set<String> tracked = tracker.getTrackedEffects(_p);
-        Set<String> expected = calculateExpectedEffects(_p);
+        Set<String> tracked = tracker.getTrackedEffects(player);
+        Set<String> expected = calculateExpectedEffects(player);
 
         sb.append("  Effects:\n");
         sb.append("    Tracked (")
@@ -100,8 +98,8 @@ public class EffectManager {
         return sb.toString();
     }
 
-    public EffectManager(PotionArmorPlugin _p) {
-        p = _p;
+    public EffectManager(PotionArmorPlugin pluginInstance) {
+        plugin = pluginInstance;
 
         for (EffectType t : EffectType.values()) {
             isEnabled.put(t, true);
@@ -109,29 +107,34 @@ public class EffectManager {
         isEnabled.put(EffectType.BASE, false); // base type abstract, cannot enable
 
         if (!Bukkit.getPluginManager().isPluginEnabled("PlayerParticles")) {
-            // ppAPI = PlayerParticlesAPI.getInstance();
-            // } else {
-            p.logger.warning("PlayerParticles is not loaded, trail support will be disabled.");
+            plugin.logger.warning("PlayerParticles is not loaded, trail support will be disabled.");
             isEnabled.put(EffectType.TRAIL, false);
         }
 
         if (!Bukkit.getPluginManager().isPluginEnabled("libsdisguises")) {
-            p.logger.warning("libsdisguises is not loaded, disguise support will be disabled.");
+            plugin.logger.warning(
+                    "libsdisguises is not loaded, disguise support will be disabled.");
             isEnabled.put(EffectType.DISGUISE, false);
         }
     }
 
+    /**
+     * Load effect configurations from the plugin's config file.
+     *
+     * @param cfg The configuration file to load from
+     * @return The number of effects loaded
+     */
     public int loadEffects(FileConfiguration cfg) {
         for (EffectType t : isEnabled.keySet()) {
             if (t != EffectType.BASE && !isEnabled.get(t)) {
-                p.logger.info(
+                plugin.logger.info(
                         "Effect type "
                                 + t.toString()
                                 + " not enabled, skipping these effects in config");
             }
         }
         Map<String, List<EquipmentEffect>> loaded =
-                EquipmentEffect.effectsFromConfig(cfg, p.logger);
+                EquipmentEffect.effectsFromConfig(cfg, plugin.logger);
         effectsTable.putAll(loaded);
         return loaded.size();
     }
@@ -145,22 +148,22 @@ public class EffectManager {
         EquipmentSlot.OFF_HAND
     };
 
-    public void resetPlayerEffects(Player _p) {
-        p.logger.info("Resetting player effects for " + _p.getName());
-        PlayerInventory inv = _p.getInventory();
-        List<ItemStack> equipment = new ArrayList<ItemStack>();
-        equipment.addAll(
-                Arrays.asList(inv.getArmorContents())); // in order, boots, legs, chest, helmet
-        equipment.add(inv.getItemInMainHand());
-        equipment.add(inv.getItemInOffHand());
+    /**
+     * Reset all effects for a player by removing tracked effects and reapplying from current equipment.
+     *
+     * @param player The player to reset effects for
+     */
+    public void resetPlayerEffects(Player player) {
+        plugin.logger.info("Resetting player effects for " + player.getName());
+        List<ItemStack> equipment = getEquippedItems(player);
 
         // Only remove effects that WE applied, preserving effects from
         // other sources (drunk potions, manually added trails, etc.)
-        clearTrackedEffects(_p);
+        clearTrackedEffects(player);
 
         // Re-apply equipment effects
         for (int i = 0; i < equipment.size(); i++) {
-            addEquipment(_p, equipment.get(i), slots[i]);
+            addEquipment(player, equipment.get(i), slots[i]);
         }
     }
 
@@ -168,14 +171,14 @@ public class EffectManager {
      * Clear only the effects that this plugin has applied to the player.
      * This preserves effects from other sources like drunk potions or manually added trails.
      */
-    private void clearTrackedEffects(Player _p) {
+    private void clearTrackedEffects(Player player) {
         // Get tracked potion types and remove only those
         if (isEnabled.get(EffectType.POTION)) {
-            Set<String> trackedPotions = tracker.getTrackedPotionTypes(_p);
-            for (org.bukkit.potion.PotionEffect active : _p.getActivePotionEffects()) {
+            Set<String> trackedPotions = tracker.getTrackedPotionTypes(player);
+            for (org.bukkit.potion.PotionEffect active : player.getActivePotionEffects()) {
                 String potionKey = "CE " + active.getType().toString();
                 if (trackedPotions.contains(potionKey)) {
-                    _p.removePotionEffect(active.getType());
+                    player.removePotionEffect(active.getType());
                 }
             }
         }
@@ -186,41 +189,51 @@ public class EffectManager {
             // We need to remove only the particles we added
             // Unfortunately the API removes all particles of a type, so we'll clear and re-add
             // non-plugin particles aren't tracked by us anyway
-            Set<String> trackedTrails = tracker.getTrackedTrails(_p);
+            Set<String> trackedTrails = tracker.getTrackedTrails(player);
             if (!trackedTrails.isEmpty()) {
                 // We have to use the API's reset since we can't selectively remove
                 // But this only affects PlayerParticles-managed particles for this player
-                PlayerParticlesAPI.getInstance().resetActivePlayerParticles(_p);
+                PlayerParticlesAPI.getInstance().resetActivePlayerParticles(player);
             }
         }
 
         // Clear tracked disguise
         if (isEnabled.get(EffectType.DISGUISE)) {
-            if (tracker.hasTrackedDisguise(_p)) {
-                DisguiseAPI.undisguiseToAll((Entity) _p);
+            if (tracker.hasTrackedDisguise(player)) {
+                DisguiseAPI.undisguiseToAll((Entity) player);
             }
         }
 
         // Clear the tracking data
-        tracker.clearPlayer(_p);
+        tracker.clearPlayer(player);
+    }
+
+    /**
+     * Get all currently equipped items for a player.
+     * @param player The player
+     * @return List containing armor (boots to helmet), main hand, and off hand items
+     */
+    private List<ItemStack> getEquippedItems(Player player) {
+        List<ItemStack> equipped = new ArrayList<>();
+        equipped.addAll(Arrays.asList(player.getEquipment().getArmorContents()));
+        equipped.add(player.getInventory().getItemInMainHand());
+        equipped.add(player.getInventory().getItemInOffHand());
+        return equipped;
     }
 
     /**
      * Find the highest level of a potion effect type that remains on equipped items
      * (excluding the item being removed).
      *
-     * @param _p The player
+     * @param player The player
      * @param potionTypeKey The potion type key (e.g., "minecraft:speed")
      * @param excludingItem The item being removed (to exclude from check)
      * @return The highest remaining level (-1 if none found)
      */
-    private int getHighestRemainingLevel(Player _p, String potionTypeKey, ItemStack excludingItem) {
+    private int getHighestRemainingLevel(
+            Player player, String potionTypeKey, ItemStack excludingItem) {
         int highestLevel = -1;
-
-        ArrayList<ItemStack> equipped = new ArrayList<>();
-        equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
-        equipped.add(_p.getInventory().getItemInMainHand());
-        equipped.add(_p.getInventory().getItemInOffHand());
+        List<ItemStack> equipped = getEquippedItems(player);
 
         for (int idx = 0; idx < equipped.size(); idx++) {
             ItemStack item = equipped.get(idx);
@@ -235,8 +248,9 @@ public class EffectManager {
             EquipmentSlot slot = slots[idx];
 
             for (String loreline : getCached(lore)) {
-                if (!effectsTable.containsKey(loreline)) continue;
-                for (EquipmentEffect eff : effectsTable.get(loreline)) {
+                List<EquipmentEffect> effects = effectsTable.get(loreline);
+                if (effects == null) continue;
+                for (EquipmentEffect eff : effects) {
                     if (!eff.slot.test(slot)) continue;
                     if (!(eff instanceof PotionEffect)) continue;
 
@@ -250,47 +264,67 @@ public class EffectManager {
         return highestLevel;
     }
 
-    private void removeEffects(Player _p, List<String> lines, ItemStack removedItem) {
+    /**
+     * Apply a potion effect at a specific level.
+     *
+     * @param player The player to apply the effect to
+     * @param baseEffect The base potion effect (for slot and type information)
+     * @param level The level to apply
+     */
+    private void applyPotionEffectAtLevel(Player player, PotionEffect baseEffect, int level) {
+        NamespacedKey key = NamespacedKey.fromString(baseEffect.getPotionTypeKey());
+        PotionEffectType effectType = Registry.EFFECT.get(key);
+        PotionEffect lowerEffect = new PotionEffect(baseEffect.slot, effectType, level);
+        lowerEffect.applyTo(player);
+        tracker.trackEffect(player, lowerEffect);
+    }
+
+    /**
+     * Handle removal of a potion effect, considering level overlaps from other equipment.
+     *
+     * @param player The player
+     * @param effect The effect being removed
+     * @param removedItem The item being removed (excluded from overlap check)
+     * @return true if effect was handled (removed or downgraded), false if should fall through
+     */
+    private boolean handlePotionEffectRemoval(
+            Player player, PotionEffect effect, ItemStack removedItem) {
+        int highestRemaining =
+                getHighestRemainingLevel(player, effect.getPotionTypeKey(), removedItem);
+
+        if (highestRemaining >= effect.getLevel()) {
+            // Higher/equal level remains - just untrack
+            tracker.untrackEffect(player, effect);
+            return true;
+        } else if (highestRemaining > 0) {
+            // Lower level remains - remove current and re-apply lower
+            effect.removeFrom(player);
+            tracker.untrackEffect(player, effect);
+            applyPotionEffectAtLevel(player, effect, highestRemaining);
+            return true;
+        }
+
+        return false; // No overlap, fall through to normal removal
+    }
+
+    private void removeEffects(Player player, List<String> lines, ItemStack removedItem) {
         for (String loreLine : lines) {
             for (EquipmentEffect eff : effectsTable.get(loreLine)) {
                 // Only remove if we tracked this effect
-                if (!tracker.isTracked(_p, eff)) {
+                if (!tracker.isTracked(player, eff)) {
                     continue;
                 }
 
                 // For potion effects, handle level overlapping
                 if (eff instanceof PotionEffect) {
-                    PotionEffect pe = (PotionEffect) eff;
-                    int highestRemaining =
-                            getHighestRemainingLevel(_p, pe.getPotionTypeKey(), removedItem);
-
-                    if (highestRemaining >= pe.getLevel()) {
-                        // A higher or equal level will remain - skip actual removal
-                        // Just untrack this specific effect
-                        tracker.untrackEffect(_p, eff);
-                        continue;
-                    } else if (highestRemaining > 0) {
-                        // Removing a higher level effect, but a lower level remains
-                        // Remove the current effect and re-apply the lower level
-                        eff.removeFrom(_p);
-                        tracker.untrackEffect(_p, eff);
-
-                        // Re-apply the highest remaining level from other equipment
-                        // Convert the potion type key back to PotionEffectType
-                        NamespacedKey key = NamespacedKey.fromString(pe.getPotionTypeKey());
-                        PotionEffectType effectType = Registry.EFFECT.get(key);
-
-                        PotionEffect lowerEffect =
-                                new PotionEffect(pe.slot, effectType, highestRemaining);
-                        lowerEffect.applyTo(_p);
-                        tracker.trackEffect(_p, lowerEffect);
+                    if (handlePotionEffectRemoval(player, (PotionEffect) eff, removedItem)) {
                         continue;
                     }
                 }
 
                 // Remove effect and untrack it
-                eff.removeFrom(_p);
-                tracker.untrackEffect(_p, eff);
+                eff.removeFrom(player);
+                tracker.untrackEffect(player, eff);
             }
         }
     }
@@ -299,13 +333,16 @@ public class EffectManager {
         loreCache.clear();
     }
 
-    public void addEquipment(Player _p, ItemStack i, EquipmentSlot slot) {
-        addEquipment(_p, i, slot, true);
-    }
-
-    private void addEquipment(Player _p, ItemStack i, EquipmentSlot slot, boolean apply) {
-        List<String> lore = getLore(i);
-        if (lore == null || _p == null) return;
+    /**
+     * Apply effects from an equipped item to a player.
+     *
+     * @param player The player equipping the item
+     * @param item The item being equipped
+     * @param slot The equipment slot
+     */
+    public void addEquipment(Player player, ItemStack item, EquipmentSlot slot) {
+        List<String> lore = getLore(item);
+        if (lore == null || player == null) return;
 
         for (String line : getCached(lore)) {
             for (EquipmentEffect eff : effectsTable.get(line)) {
@@ -319,13 +356,13 @@ public class EffectManager {
                 }
 
                 // Skip if already tracked (prevents duplicate applications)
-                if (tracker.isTracked(_p, eff)) {
+                if (tracker.isTracked(player, eff)) {
                     continue;
                 }
 
                 // Apply effect and track it
-                eff.applyTo(_p);
-                tracker.trackEffect(_p, eff);
+                eff.applyTo(player);
+                tracker.trackEffect(player, eff);
             }
         }
     }
@@ -333,8 +370,9 @@ public class EffectManager {
     public List<String> getCached(List<String> lore) {
         List<String> linesWithEffects = new ArrayList<String>();
         String loreKey = loreKey(lore);
-        if (loreCache.containsKey(loreKey)) {
-            linesWithEffects = loreCache.get(loreKey);
+        List<String> cached = loreCache.get(loreKey);
+        if (cached != null) {
+            linesWithEffects = cached;
         } else {
             for (String line : lore) {
                 String line_strip = line.strip();
@@ -351,21 +389,25 @@ public class EffectManager {
         return String.join(LORE_DELIM, lore);
     }
 
-    public void removeEquipment(Player _p, ItemStack i) {
-        removeEquipment(_p, i, true);
-    }
-
-    private void removeEquipment(Player _p, ItemStack i, boolean apply) {
-        List<String> lore = getLore(i);
-        if (i == null || i.getType() == Material.AIR || lore == null || _p == null) return;
+    /**
+     * Remove effects from an unequipped item.
+     *
+     * @param player The player unequipping the item
+     * @param item The item being unequipped
+     */
+    public void removeEquipment(Player player, ItemStack item) {
+        List<String> lore = getLore(item);
+        if (item == null || item.getType() == Material.AIR || lore == null || player == null)
+            return;
         String key = loreKey(lore);
-        if (!loreCache.containsKey(key)) return;
-        removeEffects(_p, loreCache.get(key), i);
+        List<String> cachedLines = loreCache.get(key);
+        if (cachedLines == null) return;
+        removeEffects(player, cachedLines, item);
 
         // Re-apply ALL effect types from remaining equipment
         // This fixes the issue where trails and disguises were not being re-applied
         // when removing one piece of equipment that shared effects with another
-        reapplyEffectsFromEquipment(_p);
+        reapplyEffectsFromEquipment(player);
     }
 
     /**
@@ -373,17 +415,14 @@ public class EffectManager {
      * This is called after removing equipment to ensure overlapping effects are restored.
      * The tracker prevents duplicate applications.
      */
-    private void reapplyEffectsFromEquipment(Player _p) {
-        ArrayList<ItemStack> equipped = new ArrayList<>();
-        equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
-        equipped.add(_p.getInventory().getItemInMainHand());
-        equipped.add(_p.getInventory().getItemInOffHand());
+    private void reapplyEffectsFromEquipment(Player player) {
+        List<ItemStack> equipped = getEquippedItems(player);
 
         for (int idx = 0; idx < equipped.size(); idx++) {
-            ItemStack j = equipped.get(idx);
-            if (j == null || j.getType() == Material.AIR) continue;
+            ItemStack currentItem = equipped.get(idx);
+            if (currentItem == null || currentItem.getType() == Material.AIR) continue;
 
-            List<String> _lore = getLore(j);
+            List<String> _lore = getLore(currentItem);
             if (_lore == null) continue;
 
             EquipmentSlot slot = slots[idx];
@@ -396,22 +435,22 @@ public class EffectManager {
                     // Always apply - Bukkit's addPotionEffect() handles duplicates
                     // correctly (keeps higher/longer effects). trackEffect() uses
                     // a Set so duplicate tracking calls are safe.
-                    eff.applyTo(_p);
-                    tracker.trackEffect(_p, eff);
+                    eff.applyTo(player);
+                    tracker.trackEffect(player, eff);
                 }
             }
         }
     }
 
-    public void refreshAppliedEquipment(Player _p, ItemStack toExclude) {
+    public void refreshAppliedEquipment(Player player, ItemStack toExclude) {
         // this only re-applies effects from equipment, it does not remove effects
         // TODO factor this (code adapted from resetPlayerEffects)
         // Delay by 1 tick (20ms) to ensure inventory is updated
         Bukkit.getScheduler()
                 .runTaskLater(
-                        p,
+                        plugin,
                         () -> {
-                            PlayerInventory inv = _p.getInventory();
+                            PlayerInventory inv = player.getInventory();
                             List<ItemStack> equipment = new ArrayList<ItemStack>();
                             equipment.addAll(
                                     Arrays.asList(
@@ -425,27 +464,35 @@ public class EffectManager {
                                 if ((toExclude != null) && (toAdd.isSimilar(toExclude))) {
                                     continue;
                                 }
-                                addEquipment(_p, toAdd, slots[i]);
+                                addEquipment(player, toAdd, slots[i]);
                             }
                         },
                         1L); // 1 tick = 20ms
     }
 
-    public void replaceEquipment(Player _p, ItemStack _new, ItemStack _old, EquipmentSlot slot) {
-        // TODO: figure out if bugs when new and old have overlapping effects
+    /**
+     * Replace equipment by removing old item effects and adding new item effects.
+     *
+     * @param player The player
+     * @param _new The new item being equipped
+     * @param _old The old item being unequipped
+     * @param slot The equipment slot
+     */
+    public void replaceEquipment(
+            Player player, ItemStack _new, ItemStack _old, EquipmentSlot slot) {
         if (_old != null) {
-            removeEquipment(_p, _old);
+            removeEquipment(player, _old);
         }
         if (_new != null) {
-            addEquipment(_p, _new, slot);
+            addEquipment(player, _new, slot);
         }
     }
 
     @SuppressWarnings("deprecation")
-    private static List<String> getLore(ItemStack i) {
-        if (i == null) return null;
-        if (!i.hasItemMeta()) return null;
-        ItemMeta meta = i.getItemMeta();
+    private static List<String> getLore(ItemStack item) {
+        if (item == null) return null;
+        if (!item.hasItemMeta()) return null;
+        ItemMeta meta = item.getItemMeta();
         if (!meta.hasLore()) return null;
         return meta.getLore().stream()
                 .map(line -> ChatColor.stripColor(line))
@@ -456,21 +503,17 @@ public class EffectManager {
      * Dump contents of cache and effectsTable to logs for debugging
      */
     public void dump() {
-        p.logger.info(effectsTable.toString());
-        p.logger.info(loreCache.toString());
+        plugin.logger.info(effectsTable.toString());
+        plugin.logger.info(loreCache.toString());
     }
 
     /**
      * Calculate the set of effect IDs that SHOULD be active based on current equipment.
      * Used by the validation task to detect orphaned effects.
      */
-    public Set<String> calculateExpectedEffects(Player _p) {
+    public Set<String> calculateExpectedEffects(Player player) {
         Set<String> expected = new HashSet<>();
-
-        ArrayList<ItemStack> equipped = new ArrayList<>();
-        equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
-        equipped.add(_p.getInventory().getItemInMainHand());
-        equipped.add(_p.getInventory().getItemInOffHand());
+        List<ItemStack> equipped = getEquippedItems(player);
 
         for (int idx = 0; idx < equipped.size(); idx++) {
             ItemStack item = equipped.get(idx);
@@ -482,8 +525,9 @@ public class EffectManager {
             EquipmentSlot slot = slots[idx];
 
             for (String loreline : getCached(lore)) {
-                if (!effectsTable.containsKey(loreline)) continue;
-                for (EquipmentEffect eff : effectsTable.get(loreline)) {
+                List<EquipmentEffect> effects = effectsTable.get(loreline);
+                if (effects == null) continue;
+                for (EquipmentEffect eff : effects) {
                     if (!eff.slot.test(slot)) continue;
                     if (!isEnabled.get(EquipmentEffect.getType(eff))) continue;
                     expected.add(PlayerEffectTracker.getEffectId(eff));
@@ -498,9 +542,9 @@ public class EffectManager {
      * Removes any effects that shouldn't be active and applies missing effects.
      * Returns true if any corrections were made.
      */
-    public boolean validateAndFixPlayerEffects(Player _p) {
-        Set<String> expected = calculateExpectedEffects(_p);
-        Set<String> tracked = tracker.getTrackedEffects(_p);
+    public boolean validateAndFixPlayerEffects(Player player) {
+        Set<String> expected = calculateExpectedEffects(player);
+        Set<String> tracked = tracker.getTrackedEffects(player);
 
         // Find effects that are tracked but shouldn't be (orphaned)
         Set<String> orphaned = new HashSet<>(tracked);
@@ -513,32 +557,32 @@ public class EffectManager {
         // If any mismatches found, reset player effects
         if (!orphaned.isEmpty() || !missing.isEmpty()) {
             if (!orphaned.isEmpty()) {
-                p.logger.warning(
+                plugin.logger.warning(
                         "Found "
                                 + orphaned.size()
                                 + " orphaned effects on "
-                                + _p.getName()
+                                + player.getName()
                                 + ": "
                                 + orphaned);
             }
             if (!missing.isEmpty()) {
-                p.logger.warning(
+                plugin.logger.warning(
                         "Found "
                                 + missing.size()
                                 + " missing effects on "
-                                + _p.getName()
+                                + player.getName()
                                 + ": "
                                 + missing);
             }
-            p.logger.info("Resetting effects for " + _p.getName());
-            resetPlayerEffects(_p);
+            plugin.logger.info("Resetting effects for " + player.getName());
+            resetPlayerEffects(player);
             return true;
         }
 
         // Validation passed
-        p.logger.fine(
+        plugin.logger.fine(
                 "Validation passed for "
-                        + _p.getName()
+                        + player.getName()
                         + " - "
                         + tracked.size()
                         + " effects matched");
@@ -547,10 +591,12 @@ public class EffectManager {
 
     /**
      * Clear tracking for a player without removing effects.
-     * Used when the player quits (effects are cleared by the server anyway).
+     * Used when the player quits since effects are cleared by the server anyway.
+     *
+     * @param player The player to clear tracking for
      */
-    public void clearPlayerTracking(Player _p) {
-        tracker.clearPlayer(_p);
+    public void clearPlayerTracking(Player player) {
+        tracker.clearPlayer(player);
     }
 
     public static void setSupportedEffects() {
@@ -569,22 +615,22 @@ public class EffectManager {
 
     // THIS IS A KLUDGE BECAUSE ESSENTIALS DOES NOT THROW EVENTS
     // AND YOU CAN'T LISTEN TO PROGRAMATIC INVENTORY CHANGES :(
-    public void hatCommand(Player _p) {
-        ItemStack oldHat = _p.getInventory().getHelmet();
-        ItemStack oldMain = _p.getInventory().getItemInMainHand();
+    public void hatCommand(Player player) {
+        ItemStack oldHat = player.getInventory().getHelmet();
+        ItemStack oldMain = player.getInventory().getItemInMainHand();
 
         // Delay by 2 ticks (40ms) to ensure inventory is updated after Essentials' /hat command
         Bukkit.getScheduler()
                 .runTaskLater(
-                        p,
+                        plugin,
                         () -> {
-                            ItemStack newHat = _p.getInventory().getHelmet();
-                            ItemStack newMain = _p.getInventory().getItemInMainHand();
+                            ItemStack newHat = player.getInventory().getHelmet();
+                            ItemStack newMain = player.getInventory().getItemInMainHand();
                             if (!(newHat.isSimilar(oldHat) && newMain.isSimilar(oldMain))) {
-                                removeEquipment(_p, oldHat);
-                                removeEquipment(_p, oldMain);
-                                addEquipment(_p, newHat, EquipmentSlot.HEAD);
-                                addEquipment(_p, newMain, EquipmentSlot.HAND);
+                                removeEquipment(player, oldHat);
+                                removeEquipment(player, oldMain);
+                                addEquipment(player, newHat, EquipmentSlot.HEAD);
+                                addEquipment(player, newMain, EquipmentSlot.HAND);
                             }
                         },
                         2L); // 2 ticks = 40ms
