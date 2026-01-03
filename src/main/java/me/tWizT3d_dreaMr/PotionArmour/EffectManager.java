@@ -48,7 +48,7 @@ public class EffectManager {
 
     // Track consecutive validation failures to prevent false positives
     private final Map<UUID, Integer> validationFailureCount = new ConcurrentHashMap<>();
-    private static final int VALIDATION_STRIKES_REQUIRED = 2;
+    private int validationStrikesRequired = 2; // Default, configurable
 
     // loreline --> effects list
     private static Map<String, List<EquipmentEffect>> effectsTable =
@@ -64,6 +64,18 @@ public class EffectManager {
      */
     public PlayerEffectTracker getTracker() {
         return tracker;
+    }
+
+    /**
+     * Set the number of consecutive validation failures required before reset.
+     */
+    public void setValidationStrikesRequired(int strikes) {
+        if (strikes < 1) {
+            p.logger.warning("Validation strikes must be >= 1, using default of 2");
+            this.validationStrikesRequired = 2;
+        } else {
+            this.validationStrikesRequired = strikes;
+        }
     }
 
     public EffectManager(PotionArmorPlugin _p) {
@@ -471,7 +483,7 @@ public class EffectManager {
     public boolean validateAndFixPlayerEffects(Player _p) {
         // Skip validation if equipment changed recently (cooldown period)
         long timeSinceChange = tracker.getTimeSinceLastChange(_p);
-        if (timeSinceChange < PlayerEffectTracker.VALIDATION_COOLDOWN_MS) {
+        if (timeSinceChange < tracker.getValidationCooldownMs()) {
             p.logger.fine(
                     "Skipping validation for "
                             + _p.getName()
@@ -504,11 +516,11 @@ public class EffectManager {
                             + " (strike "
                             + currentStrikes
                             + "/"
-                            + VALIDATION_STRIKES_REQUIRED
+                            + validationStrikesRequired
                             + "): "
                             + orphaned);
 
-            if (currentStrikes >= VALIDATION_STRIKES_REQUIRED) {
+            if (currentStrikes >= validationStrikesRequired) {
                 p.logger.warning(
                         "Validation strike threshold reached for "
                                 + _p.getName()
@@ -536,11 +548,11 @@ public class EffectManager {
                             + " (strike "
                             + currentStrikes
                             + "/"
-                            + VALIDATION_STRIKES_REQUIRED
+                            + validationStrikesRequired
                             + "): "
                             + missing);
 
-            if (currentStrikes >= VALIDATION_STRIKES_REQUIRED) {
+            if (currentStrikes >= validationStrikesRequired) {
                 p.logger.warning(
                         "Validation strike threshold reached for "
                                 + _p.getName()

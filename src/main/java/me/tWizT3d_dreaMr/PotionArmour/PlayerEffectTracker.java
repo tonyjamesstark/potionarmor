@@ -32,7 +32,7 @@ public class PlayerEffectTracker {
     private final Map<UUID, String> activeDisguise = new ConcurrentHashMap<>();
 
     // Cooldown tracking to prevent validation during active equipment changes
-    public static final long VALIDATION_COOLDOWN_MS = 5000L; // 5 seconds
+    private long validationCooldownMs = 5000L; // Default 5 seconds
     private final Map<UUID, Long> lastEquipmentChange = new ConcurrentHashMap<>();
 
     /**
@@ -83,6 +83,20 @@ public class PlayerEffectTracker {
         } else if (effect instanceof DisguiseEffect) {
             activeDisguise.put(uuid, effectId);
         }
+    }
+
+    /**
+     * Set the validation cooldown period in milliseconds.
+     */
+    public void setValidationCooldown(long milliseconds) {
+        this.validationCooldownMs = milliseconds;
+    }
+
+    /**
+     * Get the current validation cooldown period in milliseconds.
+     */
+    public long getValidationCooldownMs() {
+        return validationCooldownMs;
     }
 
     /**

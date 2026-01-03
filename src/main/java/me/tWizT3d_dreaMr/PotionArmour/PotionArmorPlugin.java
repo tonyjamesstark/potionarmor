@@ -26,416 +26,483 @@ import org.bukkit.entity.Player;
 
 @SuppressWarnings("deprecation")
 public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
-    public Logger logger = getLogger();
-    private final Level DEFAULT_LOGLEVEL = Level.WARNING;
-    private Level loglevel = DEFAULT_LOGLEVEL;
-    public static PotionArmorPlugin plugin;
-    public FileConfiguration config;
-    public FileConfiguration lang;
-    // public static List<FileConfiguration> moreEffectsConfig; to add for 'effects/' dir
-    private File config_dir;
-    public EventListener listener;
-    public EffectManager manager;
+	public Logger logger = getLogger();
+	private final Level DEFAULT_LOGLEVEL = Level.WARNING;
+	private Level loglevel = DEFAULT_LOGLEVEL;
+	public static PotionArmorPlugin plugin;
+	public FileConfiguration config;
+	public FileConfiguration lang;
+	// public static List<FileConfiguration> moreEffectsConfig; to add for
+	// 'effects/' dir
+	private File config_dir;
+	public EventListener listener;
+	public EffectManager manager;
 
-    // need to periodically purge cancelled tasks?
+	// need to periodically purge cancelled tasks?
 
-    private ScheduledThreadPoolExecutor pool;
-    // private ArrayBlockingQueue<Runnable> workQueue;
-    private AsyncOptions opt;
-    private boolean workAsync;
-    private boolean acceptNewJobs = false;
+	private ScheduledThreadPoolExecutor pool;
+	// private ArrayBlockingQueue<Runnable> workQueue;
+	private AsyncOptions opt;
+	private boolean workAsync;
+	private boolean acceptNewJobs = false;
 
-    // private final int DEFAULT_NTHREADS = 4;
+	// private final int DEFAULT_NTHREADS = 4;
 
-    // Task ID for the periodic validation task
-    private int validationTaskId = -1;
+	// Task ID for the periodic validation task
+	private int validationTaskId = -1;
 
-    // Validation interval in ticks (60 seconds = 1200 ticks, reduced false positives)
-    private static final long VALIDATION_INTERVAL_TICKS = 1200L;
+	// Validation configuration (loaded from config.yml)
+	private boolean validationEnabled = true;
+	private long validationIntervalTicks = 600L; // Default 30s
+	private int validationCooldownSeconds = 5;
+	private int validationStrikesRequired = 2;
 
-    @Override
-    public void onEnable() {
-        plugin = this;
-        EffectManager.setSupportedEffects();
-        this.config_dir = getDataFolder();
-        reloadConfigs(false);
+	@Override
+	public void onEnable() {
+		plugin = this;
+		EffectManager.setSupportedEffects();
+		this.config_dir = getDataFolder();
+		reloadConfigs(false);
 
-        this.manager = new EffectManager(this);
-        this.listener = new EventListener(manager);
+		this.manager = new EffectManager(this);
+		this.listener = new EventListener(manager);
 
-        // if config not yet loaded assume will be using action queue
-        this.workAsync = config != null ? config.getBoolean("meta.async") : true;
-        if (workAsync) {
-            // if (config != null){
-            this.opt = AsyncOptions.fromConfig(config);
-            // workQueue = new ArrayBlockingQueue<Runnable>(opt.queueCapacity);
-            this.pool = new ScheduledThreadPoolExecutor(opt.nThreads);
-            // } else{
-            //     this.pool = new ScheduledThreadPoolExecutor(DEFAULT_NTHREADS);
-            // }
+		// if config not yet loaded assume will be using action queue
+		this.workAsync = config != null ? config.getBoolean("meta.async") : true;
+		if (workAsync) {
+			// if (config != null){
+			this.opt = AsyncOptions.fromConfig(config);
+			// workQueue = new ArrayBlockingQueue<Runnable>(opt.queueCapacity);
+			this.pool = new ScheduledThreadPoolExecutor(opt.nThreads);
+			// } else{
+			// this.pool = new ScheduledThreadPoolExecutor(DEFAULT_NTHREADS);
+			// }
 
-            this.acceptNewJobs = false;
-        }
+			this.acceptNewJobs = false;
+		}
 
-        // load effects later so PlayerParticles has a chance to populate its lookup tables
-        Runnable job =
-                () -> {
-                    int loaded = manager.loadEffects(config);
-                    logger.info(loaded + " effects loaded");
-                    // manager.loadEffects(moreEffectsConfig); to add for 'effects/' dir
+		// load effects later so PlayerParticles has a chance to populate its lookup
+		// tables
+		Runnable job = () -> {
+			int loaded = manager.loadEffects(config);
+			logger.info(loaded + " effects loaded");
+			// manager.loadEffects(moreEffectsConfig); to add for 'effects/' dir
 
-                    // also enable action queue at later time
-                    this.acceptNewJobs = this.workAsync;
+			// also enable action queue at later time
+			this.acceptNewJobs = this.workAsync;
 
-                    // Start the periodic validation task
-                    startValidationTask();
-                };
-        Bukkit.getScheduler().runTask(this, job);
+			// Start the periodic validation task
+			startValidationTask();
+		};
+		Bukkit.getScheduler().runTask(this, job);
 
-        Bukkit.getPluginManager().registerEvents(listener, this);
-    }
+		Bukkit.getPluginManager().registerEvents(listener, this);
+	}
 
-    /**
-     * Start the periodic validation task that catches edge cases
-     * where effects might persist incorrectly.
-     */
-    private void startValidationTask() {
-        // Cancel existing task if running
-        if (validationTaskId != -1) {
-            Bukkit.getScheduler().cancelTask(validationTaskId);
-        }
+	/**
+	 * Start the periodic validation task that catches edge cases
+	 * where effects might persist incorrectly.
+	 */
+	private void startValidationTask() {
+		// Cancel existing task if running
+		if (validationTaskId != -1) {
+			Bukkit.getScheduler().cancelTask(validationTaskId);
+			validationTaskId = -1;
+		}
 
-        validationTaskId =
-                Bukkit.getScheduler()
-                        .runTaskTimer(
-                                this,
-                                () -> {
-                                    for (Player p : Bukkit.getOnlinePlayers()) {
-                                        manager.validateAndFixPlayerEffects(p);
-                                    }
-                                },
-                                VALIDATION_INTERVAL_TICKS,
-                                VALIDATION_INTERVAL_TICKS)
-                        .getTaskId();
-        logger.info(
-                "Started periodic effect validation task (every "
-                        + (VALIDATION_INTERVAL_TICKS / 20)
-                        + " seconds)");
-    }
+		if (!validationEnabled) {
+			logger.info("Periodic validation is disabled in config");
+			return;
+		}
 
-    @Override
-    public void onDisable() {
-        this.saveConfig(); // in case loaded default configs
+		validationTaskId = Bukkit.getScheduler()
+				.runTaskTimer(
+						this,
+						() -> {
+							for (Player p : Bukkit.getOnlinePlayers()) {
+								manager.validateAndFixPlayerEffects(p);
+							}
+						},
+						validationIntervalTicks,
+						validationIntervalTicks)
+				.getTaskId();
+		logger.info(
+				"Started periodic effect validation task (every "
+						+ (validationIntervalTicks / 20)
+						+ " seconds)");
+	}
 
-        // Cancel the validation task
-        if (validationTaskId != -1) {
-            Bukkit.getScheduler().cancelTask(validationTaskId);
-            validationTaskId = -1;
-        }
+	@Override
+	public void onDisable() {
+		this.saveConfig(); // in case loaded default configs
 
-        if (workAsync) cancelAllTasks();
-        pool.close();
-    }
+		// Cancel the validation task
+		if (validationTaskId != -1) {
+			Bukkit.getScheduler().cancelTask(validationTaskId);
+			validationTaskId = -1;
+		}
 
-    @Override
-    public void saveConfig() {
-        String lang_location = "NOT_FOUND";
-        try {
-            List<String> comments = new ArrayList<>(this.config.getComments("SupportedEffects"));
+		if (workAsync)
+			cancelAllTasks();
+		pool.close();
+	}
 
-            // ensure effects list in comments
-            if (!comments.contains(EffectManager.supportedEffects.get(0).toString())) {
-                comments.add(lang.getString("supported_effects"));
-                for (NamespacedKey k : EffectManager.supportedEffects) {
-                    comments.add(k.toString());
-                }
-                this.config.setComments("SupportedEffects", comments);
-            }
-            super.saveConfig();
-            this.config = getConfig();
+	@Override
+	public void saveConfig() {
+		String lang_location = "NOT_FOUND";
+		try {
+			List<String> comments = new ArrayList<>(this.config.getComments("SupportedEffects"));
 
-            File lang_loc = new File(config_dir, config.getString("language_loc", "language.yml"));
-            lang_location = lang_loc.toString();
-            this.lang.save(lang_loc);
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, lang.getString("failed_save_file_exists") + lang_location);
-        } catch (Exception e) {
-            logger.log(
-                    Level.SEVERE,
-                    lang == null
-                            ? "error saving config, language.yml not loaded"
-                            : lang.getString("failed_save"));
-        }
-    }
+			// ensure effects list in comments
+			if (!comments.contains(EffectManager.supportedEffects.get(0).toString())) {
+				comments.add(lang.getString("supported_effects"));
+				for (NamespacedKey k : EffectManager.supportedEffects) {
+					comments.add(k.toString());
+				}
+				this.config.setComments("SupportedEffects", comments);
+			}
+			super.saveConfig();
+			this.config = getConfig();
 
-    /**
-     * {@code checkPerms} defaults to {@link PotionArmorPlugin#checkPerms(CommandSender, String, boolean)}
-     *
-     * @see PotionArmorPlugin#checkPerms(CommandSender, String, boolean)
-     */
-    public boolean checkPerms(CommandSender p, String perm) {
-        return checkPerms(p, perm, true); // default to check only players
-    }
+			File lang_loc = new File(config_dir, config.getString("language_loc", "language.yml"));
+			lang_location = lang_loc.toString();
+			this.lang.save(lang_loc);
+		} catch (IOException e) {
+			logger.log(Level.SEVERE, lang.getString("failed_save_file_exists") + lang_location);
+		} catch (Exception e) {
+			logger.log(
+					Level.SEVERE,
+					lang == null
+							? "error saving config, language.yml not loaded"
+							: lang.getString("failed_save"));
+		}
+	}
 
-    /**
-     * Check permissions
-     *
-     * @param p who to check permission for
-     * @param perm the permission string
-     * @param onlyPlayers whether to ignore (return true for) nonplayers
-     * @return whether 'p' has permission 'perm'
-     */
-    public boolean checkPerms(CommandSender p, String perm, boolean onlyPlayers) {
-        if (onlyPlayers && (!(p instanceof Player))) {
-            return false;
-        }
-        if (p.hasPermission(perm)) {
-            return true;
-        } else {
-            p.sendMessage(lang.getString("no_perms"));
-            return false;
-        }
-    }
+	/**
+	 * {@code checkPerms} defaults to
+	 * {@link PotionArmorPlugin#checkPerms(CommandSender, String, boolean)}
+	 *
+	 * @see PotionArmorPlugin#checkPerms(CommandSender, String, boolean)
+	 */
+	public boolean checkPerms(CommandSender p, String perm) {
+		return checkPerms(p, perm, true); // default to check only players
+	}
 
-    public boolean reloadConfigs() {
-        return reloadConfigs(true);
-    }
+	/**
+	 * Check permissions
+	 *
+	 * @param p           who to check permission for
+	 * @param perm        the permission string
+	 * @param onlyPlayers whether to ignore (return true for) nonplayers
+	 * @return whether 'p' has permission 'perm'
+	 */
+	public boolean checkPerms(CommandSender p, String perm, boolean onlyPlayers) {
+		if (onlyPlayers && (!(p instanceof Player))) {
+			return false;
+		}
+		if (p.hasPermission(perm)) {
+			return true;
+		} else {
+			p.sendMessage(lang.getString("no_perms"));
+			return false;
+		}
+	}
 
-    public boolean reloadConfigs(CommandSender sender) {
-        return reloadConfigs(sender, true);
-    }
+	public boolean reloadConfigs() {
+		return reloadConfigs(true);
+	}
 
-    public boolean reloadConfigs(boolean isSetup) {
-        // note: void reloadConfig() (no 's') is a superclass method, don't get confused
-        return reloadConfigs((CommandSender) Bukkit.getConsoleSender(), isSetup);
-    }
+	public boolean reloadConfigs(CommandSender sender) {
+		return reloadConfigs(sender, true);
+	}
 
-    public boolean reloadConfigs(CommandSender sender, boolean isSetup) {
-        acceptNewJobs = false;
-        boolean saveNeeded = false;
-        if (!checkPerms(sender, "Potionarmor.reload", false)) {
-            String msg = "&cNo permission";
-            if (lang != null) {
-                msg = lang.getString("no_perms");
-            }
-            sender.sendMessage(msg);
-            return true;
-        }
+	public boolean reloadConfigs(boolean isSetup) {
+		// note: void reloadConfig() (no 's') is a superclass method, don't get confused
+		return reloadConfigs((CommandSender) Bukkit.getConsoleSender(), isSetup);
+	}
 
-        if (!(config_dir.exists() && config_dir.isDirectory())) {
-            sender.sendMessage("Configuration directory not found, writing default");
-            config_dir.delete();
-            config_dir.mkdir();
-            saveDefaultConfig();
-            saveNeeded = true;
-        }
+	public boolean reloadConfigs(CommandSender sender, boolean isSetup) {
+		acceptNewJobs = false;
+		boolean saveNeeded = false;
+		if (!checkPerms(sender, "Potionarmor.reload", false)) {
+			String msg = "&cNo permission";
+			if (lang != null) {
+				msg = lang.getString("no_perms");
+			}
+			sender.sendMessage(msg);
+			return true;
+		}
 
-        reloadConfig();
-        this.config = getConfig();
+		if (!(config_dir.exists() && config_dir.isDirectory())) {
+			sender.sendMessage("Configuration directory not found, writing default");
+			config_dir.delete();
+			config_dir.mkdir();
+			saveDefaultConfig();
+			saveNeeded = true;
+		}
 
-        if (this.config == null) {
-            this.saveConfig(); // will not overwrite existing, defaults to embedded
-            this.config = getConfig();
-        }
+		reloadConfig();
+		this.config = getConfig();
 
-        try {
-            loglevel = Level.parse(this.config.getString("meta.log_level"));
-        } catch (IllegalArgumentException e) {
-            logger.severe("could not parse meta.log_level");
-            loglevel = DEFAULT_LOGLEVEL;
-        }
+		if (this.config == null) {
+			this.saveConfig(); // will not overwrite existing, defaults to embedded
+			this.config = getConfig();
+		}
 
-        this.logger.setLevel(loglevel);
-        logger.info("Logging level set to " + loglevel.getName());
+		try {
+			loglevel = Level.parse(this.config.getString("meta.log_level"));
+		} catch (IllegalArgumentException e) {
+			logger.severe("could not parse meta.log_level");
+			loglevel = DEFAULT_LOGLEVEL;
+		}
 
-        this.opt = AsyncOptions.fromConfig(config);
+		this.logger.setLevel(loglevel);
+		logger.info("Logging level set to " + loglevel.getName());
 
-        EffectManager.setSupportedEffects();
+		this.opt = AsyncOptions.fromConfig(config);
 
-        // TODO: check version and convert to new format
+		// Load validation configuration
+		ConfigurationSection validationSection = this.config.getConfigurationSection("meta.validation");
+		if (validationSection != null) {
+			validationEnabled = validationSection.getBoolean("enabled", true);
 
-        File lang_loc = new File(config_dir, this.config.getString("meta.language_loc"));
-        if (!lang_loc.exists()) {
-            saveResource("language.yml", true); // overwrites
-        }
-        this.lang = YamlConfiguration.loadConfiguration(lang_loc);
+			int intervalSecs = validationSection.getInt("interval_seconds", 60);
+			if (intervalSecs < 30) {
+				logger.warning(
+						"Validation interval too low ("
+								+ intervalSecs
+								+ "s), using minimum of 30s");
+				intervalSecs = 30;
+			} else if (intervalSecs > 300) {
+				logger.warning(
+						"Validation interval too high ("
+								+ intervalSecs
+								+ "s), using maximum of 300s");
+				intervalSecs = 300;
+			}
+			validationIntervalTicks = intervalSecs * 20L;
 
-        if (isSetup) {
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                manager.resetPlayerEffects(p);
-            }
-        }
-        if (saveNeeded) {
-            this.saveConfig();
-        }
-        if (isSetup) {
-            this.manager.resetLoreCache();
-            int loadedEffects = this.manager.loadEffects(this.config);
-            logger.log(Level.INFO, "Loaded " + loadedEffects + " effects.");
-            acceptNewJobs = this.workAsync;
-            if (this.workAsync != this.config.getBoolean("meta.async")) {
-                this.logger.log(Level.SEVERE, "To change async option, must restart.");
-                sender.sendMessage(this.lang.getString("change_async"));
-            }
-        }
+			validationCooldownSeconds = validationSection.getInt("cooldown_seconds", 5);
+			if (validationCooldownSeconds < 0) {
+				logger.warning("Validation cooldown cannot be negative, using 5s");
+				validationCooldownSeconds = 5;
+			}
 
-        sender.sendMessage(
-                ChatColor.GREEN + "[potionarmor] " + this.lang.getString("config_reload"));
-        return true;
-    }
+			validationStrikesRequired = validationSection.getInt("strikes_required", 2);
+			if (validationStrikesRequired < 1) {
+				logger.warning("Validation strikes must be >= 1, using 2");
+				validationStrikesRequired = 2;
+			}
 
-    public boolean resetPlayer(CommandSender sender, String[] args) {
-        logger.info("executing resetPlayer()...");
+			logger.info(
+					"Validation settings: enabled="
+							+ validationEnabled
+							+ ", interval="
+							+ (validationIntervalTicks / 20)
+							+ "s"
+							+ ", cooldown="
+							+ validationCooldownSeconds
+							+ "s"
+							+ ", strikes="
+							+ validationStrikesRequired);
+		} else {
+			logger.info("No validation config section found, using defaults");
+		}
 
-        // Allow players to reset themselves without args
-        if (args.length == 0) {
-            if (!(sender instanceof Player)) {
-                sender.sendMessage(lang.getString("invalid_command") + " Usage: /pareset <player>");
-                return true;
-            }
-            // Self-reset - requires basic permission
-            if (!checkPerms(sender, "Potionarmor.pareset.self", true)) return true;
+		EffectManager.setSupportedEffects();
 
-            Player self = (Player) sender;
-            manager.resetPlayerEffects(self);
-            sender.sendMessage(
-                    ChatColor.GREEN
-                            + "[PotionArmor] "
-                            + lang.getString("reset_notice")
-                            + self.getName());
-            return true;
-        }
+		// TODO: check version and convert to new format
 
-        // Resetting another player requires full permission
-        if (!checkPerms(sender, "Potionarmor.pareset", false)) return true;
+		File lang_loc = new File(config_dir, this.config.getString("meta.language_loc"));
+		if (!lang_loc.exists()) {
+			saveResource("language.yml", true); // overwrites
+		}
+		this.lang = YamlConfiguration.loadConfiguration(lang_loc);
 
-        if (args.length != 1) {
-            sender.sendMessage(lang.getString("invalid_command"));
-            return true;
-        }
-        logger.info("creating player profile..." + Arrays.asList(args));
+		if (isSetup) {
+			for (Player p : Bukkit.getOnlinePlayers()) {
+				manager.resetPlayerEffects(p);
+			}
+		}
+		if (saveNeeded) {
+			this.saveConfig();
+		}
+		if (isSetup) {
+			this.manager.resetLoreCache();
+			int loadedEffects = this.manager.loadEffects(this.config);
+			logger.log(Level.INFO, "Loaded " + loadedEffects + " effects.");
 
-        // TODO: does this take too long based on our offline player list...?
-        // alternatively loop through online players, or try-catch creating online player
-        // TODO: fuzzy searching functionality was removed, consider re-adding
-        OfflinePlayer p =
-                Bukkit.getOfflinePlayer(Bukkit.getServer().createProfile(args[0]).getUniqueId());
-        logger.info("resetting player..." + p.toString());
+			// Apply validation configuration to manager
+			manager.getTracker().setValidationCooldown(validationCooldownSeconds * 1000L);
+			manager.setValidationStrikesRequired(validationStrikesRequired);
 
-        if (p.isOnline()) {
-            manager.resetPlayerEffects(p.getPlayer());
-            sender.sendMessage(
-                    lang.getString("reset_notice")
-                            + args[0]); // not sure if want to keep arg passing...
-            return true;
-        }
-        logger.info("sending message...");
+			acceptNewJobs = this.workAsync;
+			if (this.workAsync != this.config.getBoolean("meta.async")) {
+				this.logger.log(Level.SEVERE, "To change async option, must restart.");
+				sender.sendMessage(this.lang.getString("change_async"));
+			}
+		}
 
-        sender.sendMessage(
-                lang.getString("player_not_found")
-                        + args[0]); // not sure if want to keep arg passing...
-        return true;
-    }
+		sender.sendMessage(
+				ChatColor.GREEN + "[potionarmor] " + this.lang.getString("config_reload"));
+		return true;
+	}
 
-    public boolean printEffects(CommandSender sender) {
-        if (!checkPerms(sender, "Potionarmor.effect")) return true;
+	public boolean resetPlayer(CommandSender sender, String[] args) {
+		logger.info("executing resetPlayer()...");
 
-        String msg = lang.getString("supported_effects");
-        for (NamespacedKey k : EffectManager.supportedEffects) {
-            msg += k.toString() + ", ";
-        }
-        msg = msg.substring(0, msg.length() - 2); // clip final comma
-        sender.sendMessage(msg);
-        return true;
-    }
+		// Allow players to reset themselves without args
+		if (args.length == 0) {
+			if (!(sender instanceof Player)) {
+				sender.sendMessage(lang.getString("invalid_command") + " Usage: /pareset <player>");
+				return true;
+			}
+			// Self-reset - requires basic permission
+			if (!checkPerms(sender, "Potionarmor.pareset.self", true))
+				return true;
 
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        String commandName = command.getName().toLowerCase();
-        switch (commandName) {
-            case "pareset":
-                return resetPlayer(sender, args);
-            case "reload":
-                return reloadConfigs(sender);
-            case "effects":
-                return printEffects(sender);
-            case "debugdump":
-                return dumpManager(sender);
-            default:
-                break;
-        }
-        sender.sendMessage(lang.getString("invalid_command"));
-        return false;
-    }
+			Player self = (Player) sender;
+			manager.resetPlayerEffects(self);
+			sender.sendMessage(
+					ChatColor.GREEN
+							+ "[PotionArmor] "
+							+ lang.getString("reset_notice")
+							+ self.getName());
+			return true;
+		}
 
-    public boolean dumpManager(CommandSender sender) {
-        if (!(sender instanceof ConsoleCommandSender)) {
-            sender.sendMessage("Command only supported from console.");
-            return true;
-        }
-        manager.dump();
-        return true;
-    }
+		// Resetting another player requires full permission
+		if (!checkPerms(sender, "Potionarmor.pareset", false))
+			return true;
 
-    private static final class AsyncOptions {
-        int nThreads;
-        int maxThreads;
-        long timeout;
-        TimeUnit timeUnit;
-        int queueCapacity;
+		if (args.length != 1) {
+			sender.sendMessage(lang.getString("invalid_command"));
+			return true;
+		}
+		logger.info("creating player profile..." + Arrays.asList(args));
 
-        public AsyncOptions(
-                int nThreads, int maxThreads, long timeout, TimeUnit timeUnit, int queueCapacity) {
-            this.nThreads = nThreads;
-            this.maxThreads = maxThreads;
-            this.timeout = timeout;
-            this.timeUnit = timeUnit;
-            this.queueCapacity = queueCapacity;
-        }
+		// TODO: does this take too long based on our offline player list...?
+		// alternatively loop through online players, or try-catch creating online
+		// player
+		// TODO: fuzzy searching functionality was removed, consider re-adding
+		OfflinePlayer p = Bukkit.getOfflinePlayer(Bukkit.getServer().createProfile(args[0]).getUniqueId());
+		logger.info("resetting player..." + p.toString());
 
-        private static AsyncOptions fromConfig(ConfigurationSection s) {
-            ConfigurationSection meta = s.getConfigurationSection("meta");
-            int nThreads = meta.getInt("threads", 4);
-            int maxThreads = meta.getInt("maxThreads", 10);
-            long timeout = meta.getLong("timeout", 60);
-            TimeUnit timeUnit = TimeUnit.SECONDS;
-            String timeUnitString = meta.getString("unit", "SECONDS").toUpperCase();
-            try {
-                timeUnit = TimeUnit.valueOf(timeUnitString);
-            } catch (IllegalArgumentException e) {
-                ((PotionArmorPlugin) PotionArmorPlugin.plugin)
-                        .logger.log(
-                                Level.SEVERE, "Invalid timeout units in meta: " + timeUnitString);
-            }
-            int queueCapacity = meta.getInt("capacity", 200);
-            return new AsyncOptions(nThreads, maxThreads, timeout, timeUnit, queueCapacity);
-        }
-    }
+		if (p.isOnline()) {
+			manager.resetPlayerEffects(p.getPlayer());
+			sender.sendMessage(
+					lang.getString("reset_notice")
+							+ args[0]); // not sure if want to keep arg passing...
+			return true;
+		}
+		logger.info("sending message...");
 
-    public void submitAsyncTask(Runnable job) {
-        submitAsyncTaskLater(job, 0, TimeUnit.SECONDS);
-    }
+		sender.sendMessage(
+				lang.getString("player_not_found")
+						+ args[0]); // not sure if want to keep arg passing...
+		return true;
+	}
 
-    public void submitAsyncTaskLater(Runnable job, long delay, TimeUnit unit) {
-        if (!workAsync) {
-            job.run(); // blocks
-            return;
-        }
-        if (acceptNewJobs) {
-            try {
-                pool.schedule(job, delay, unit);
-            } catch (RejectedExecutionException e) {
-                logger.log(
-                        Level.SEVERE,
-                        "Job queue is full, rejecting event...try increasing capcaity");
-            }
-        }
-    }
+	public boolean printEffects(CommandSender sender) {
+		if (!checkPerms(sender, "Potionarmor.effect"))
+			return true;
 
-    public void cancelAllTasks() {
-        if (!workAsync) return;
-        for (Runnable job : pool.getQueue()) {
-            pool.remove(job);
-        }
-        pool.purge();
-    }
+		String msg = lang.getString("supported_effects");
+		for (NamespacedKey k : EffectManager.supportedEffects) {
+			msg += k.toString() + ", ";
+		}
+		msg = msg.substring(0, msg.length() - 2); // clip final comma
+		sender.sendMessage(msg);
+		return true;
+	}
+
+	public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+		String commandName = command.getName().toLowerCase();
+		switch (commandName) {
+			case "pareset":
+				return resetPlayer(sender, args);
+			case "reload":
+				return reloadConfigs(sender);
+			case "effects":
+				return printEffects(sender);
+			case "debugdump":
+				return dumpManager(sender);
+			default:
+				break;
+		}
+		sender.sendMessage(lang.getString("invalid_command"));
+		return false;
+	}
+
+	public boolean dumpManager(CommandSender sender) {
+		if (!(sender instanceof ConsoleCommandSender)) {
+			sender.sendMessage("Command only supported from console.");
+			return true;
+		}
+		manager.dump();
+		return true;
+	}
+
+	private static final class AsyncOptions {
+		int nThreads;
+		int maxThreads;
+		long timeout;
+		TimeUnit timeUnit;
+		int queueCapacity;
+
+		public AsyncOptions(
+				int nThreads, int maxThreads, long timeout, TimeUnit timeUnit, int queueCapacity) {
+			this.nThreads = nThreads;
+			this.maxThreads = maxThreads;
+			this.timeout = timeout;
+			this.timeUnit = timeUnit;
+			this.queueCapacity = queueCapacity;
+		}
+
+		private static AsyncOptions fromConfig(ConfigurationSection s) {
+			ConfigurationSection meta = s.getConfigurationSection("meta");
+			int nThreads = meta.getInt("threads", 4);
+			int maxThreads = meta.getInt("maxThreads", 10);
+			long timeout = meta.getLong("timeout", 60);
+			TimeUnit timeUnit = TimeUnit.SECONDS;
+			String timeUnitString = meta.getString("unit", "SECONDS").toUpperCase();
+			try {
+				timeUnit = TimeUnit.valueOf(timeUnitString);
+			} catch (IllegalArgumentException e) {
+				((PotionArmorPlugin) PotionArmorPlugin.plugin).logger.log(
+						Level.SEVERE, "Invalid timeout units in meta: " + timeUnitString);
+			}
+			int queueCapacity = meta.getInt("capacity", 200);
+			return new AsyncOptions(nThreads, maxThreads, timeout, timeUnit, queueCapacity);
+		}
+	}
+
+	public void submitAsyncTask(Runnable job) {
+		submitAsyncTaskLater(job, 0, TimeUnit.SECONDS);
+	}
+
+	public void submitAsyncTaskLater(Runnable job, long delay, TimeUnit unit) {
+		if (!workAsync) {
+			job.run(); // blocks
+			return;
+		}
+		if (acceptNewJobs) {
+			try {
+				pool.schedule(job, delay, unit);
+			} catch (RejectedExecutionException e) {
+				logger.log(
+						Level.SEVERE,
+						"Job queue is full, rejecting event...try increasing capcaity");
+			}
+		}
+	}
+
+	public void cancelAllTasks() {
+		if (!workAsync)
+			return;
+		for (Runnable job : pool.getQueue()) {
+			pool.remove(job);
+		}
+		pool.purge();
+	}
 }

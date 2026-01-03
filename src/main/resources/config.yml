@@ -32,6 +32,38 @@ meta:
   # unit: SECONDS # timeout time unit
   log_level: INFO
 
+  # Periodic Validation Settings
+  # The validation task periodically checks all online players for orphaned or missing effects.
+  # This helps catch edge cases where effects might not sync correctly due to async timing.
+  # Adjust these settings based on your server's performance and player count.
+  validation:
+    # Enable/disable periodic validation entirely
+    # Set to false if validation is causing performance issues
+    # Default: true
+    enabled: true
+
+    # How often (in seconds) to validate player effects
+    # Higher values = less server overhead but slower orphan detection
+    # Lower values = more responsive but higher CPU usage
+    # Range: 30-300 seconds
+    # Default: 60 (recommended for most servers)
+    interval_seconds: 60
+
+    # Cooldown period (in seconds) after equipment changes
+    # Validation is skipped if equipment changed within this window
+    # Prevents false positives during async effect application
+    # Increase if you have a slow/busy async thread pool
+    # Range: 1-30 seconds
+    # Default: 5 (recommended for most servers)
+    cooldown_seconds: 5
+
+    # Number of consecutive validation failures required before reset
+    # Higher values = more conservative, avoids false positives
+    # Lower values = more aggressive, faster orphan removal
+    # Range: 1-5
+    # Default: 2 (recommended for most servers)
+    strikes_required: 2
+
 SupportedEffects: ""
 
 Defaults:
