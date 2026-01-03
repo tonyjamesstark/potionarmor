@@ -108,8 +108,12 @@ If optional dependencies are missing, those effect types are automatically disab
 
 ## Known Issues & TODOs
 
+- **CRITICAL BUG**: Periodic validation race condition causing effect flickering (see `BUG_ANALYSIS_VALIDATION_RACE_CONDITION.md`)
+  - Validation task runs every 30s and conflicts with async effect application
+  - Players experience effects being removed and re-added
+  - Fix planned: Add equipment change cooldown + multi-strike detection
 - Magic number `UNKNOWN_SLOT_NUM = 45` for offhand slot (needs verification)
-- `clearActivePotionEffects()` in EffectManager clears ALL potion effects, not just plugin-applied ones
+- `clearActivePotionEffects()` in EffectManager clears ALL potion effects, not just plugin-applied ones (partially fixed by tracker system in 9ae9b64)
 - Hat command handler is a workaround since Essentials doesn't fire events for programmatic inventory changes
 - Lore cache never clears during runtime (potential memory growth, though likely negligible)
 

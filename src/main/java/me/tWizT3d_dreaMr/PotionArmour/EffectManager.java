@@ -9,7 +9,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +45,10 @@ public class EffectManager {
     // Tracks which effects this plugin has applied to each player
     // This allows us to only remove OUR effects, not effects from other sources
     private final PlayerEffectTracker tracker = new PlayerEffectTracker();
+
+    // Track consecutive validation failures to prevent false positives
+    private final Map<UUID, Integer> validationFailureCount = new ConcurrentHashMap<>();
+    private static final int VALIDATION_STRIKES_REQUIRED = 2;
 
     // loreline --> effects list
     private static Map<String, List<EquipmentEffect>> effectsTable =
@@ -233,6 +239,9 @@ public class EffectManager {
     }
 
     private void addEquipment(Player _p, ItemStack i, EquipmentSlot slot, boolean apply) {
+        tracker.markEquipmentChange(_p);
+        validationFailureCount.put(_p.getUniqueId(), 0);
+
         List<String> lore = getLore(i);
         if (lore == null || _p == null) return;
         Callable<Void> task =
@@ -299,6 +308,9 @@ public class EffectManager {
     }
 
     private void removeEquipment(Player _p, ItemStack i, boolean apply) {
+        tracker.markEquipmentChange(_p);
+        validationFailureCount.put(_p.getUniqueId(), 0);
+
         List<String> lore = getLore(i);
         if (i == null || i.getType() == Material.AIR || lore == null || _p == null) return;
         String key = loreKey(lore);
@@ -387,6 +399,9 @@ public class EffectManager {
     }
 
     public void replaceEquipment(Player _p, ItemStack _new, ItemStack _old, EquipmentSlot slot) {
+        tracker.markEquipmentChange(_p);
+        validationFailureCount.put(_p.getUniqueId(), 0);
+
         // TODO: figure out if bugs when new and old have overlapping effects
         if (_old != null) {
             removeEquipment(_p, _old);
@@ -454,43 +469,98 @@ public class EffectManager {
      * Returns true if any corrections were made.
      */
     public boolean validateAndFixPlayerEffects(Player _p) {
+        // Skip validation if equipment changed recently (cooldown period)
+        long timeSinceChange = tracker.getTimeSinceLastChange(_p);
+        if (timeSinceChange < PlayerEffectTracker.VALIDATION_COOLDOWN_MS) {
+            p.logger.fine(
+                    "Skipping validation for "
+                            + _p.getName()
+                            + " - equipment changed "
+                            + timeSinceChange
+                            + "ms ago (within cooldown)");
+            return false;
+        }
+
         Set<String> expected = calculateExpectedEffects(_p);
         Set<String> tracked = tracker.getTrackedEffects(_p);
         boolean corrected = false;
+
+        UUID uuid = _p.getUniqueId();
+        int currentStrikes = validationFailureCount.getOrDefault(uuid, 0);
 
         // Find effects that are tracked but shouldn't be (orphaned)
         Set<String> orphaned = new HashSet<>(tracked);
         orphaned.removeAll(expected);
 
         if (!orphaned.isEmpty()) {
+            currentStrikes++;
+            validationFailureCount.put(uuid, currentStrikes);
+
             p.logger.warning(
                     "Found "
                             + orphaned.size()
                             + " orphaned effects on "
                             + _p.getName()
-                            + ": "
+                            + " (strike "
+                            + currentStrikes
+                            + "/"
+                            + VALIDATION_STRIKES_REQUIRED
+                            + "): "
                             + orphaned);
-            // Remove orphaned effects by doing a full reset
-            // This is safer than trying to selectively remove
-            resetPlayerEffects(_p);
-            corrected = true;
+
+            if (currentStrikes >= VALIDATION_STRIKES_REQUIRED) {
+                p.logger.warning(
+                        "Validation strike threshold reached for "
+                                + _p.getName()
+                                + " - triggering effect reset");
+                resetPlayerEffects(_p);
+                validationFailureCount.put(uuid, 0); // Reset after correction
+                corrected = true;
+            }
+            return corrected;
         }
 
         // Find effects that should be active but aren't tracked
         Set<String> missing = new HashSet<>(expected);
         missing.removeAll(tracked);
 
-        if (!missing.isEmpty() && !corrected) {
+        if (!missing.isEmpty()) {
+            currentStrikes++;
+            validationFailureCount.put(uuid, currentStrikes);
+
             p.logger.warning(
                     "Found "
                             + missing.size()
                             + " missing effects on "
                             + _p.getName()
-                            + ": "
+                            + " (strike "
+                            + currentStrikes
+                            + "/"
+                            + VALIDATION_STRIKES_REQUIRED
+                            + "): "
                             + missing);
-            // Re-apply effects from equipment
-            reapplyEffectsFromEquipment(_p);
-            corrected = true;
+
+            if (currentStrikes >= VALIDATION_STRIKES_REQUIRED) {
+                p.logger.warning(
+                        "Validation strike threshold reached for "
+                                + _p.getName()
+                                + " - triggering effect reapply");
+                reapplyEffectsFromEquipment(_p);
+                validationFailureCount.put(uuid, 0); // Reset after correction
+                corrected = true;
+            }
+            return corrected;
+        }
+
+        // Validation passed - reset strike counter
+        if (currentStrikes > 0) {
+            p.logger.fine(
+                    "Validation passed for "
+                            + _p.getName()
+                            + " - resetting strike counter (was "
+                            + currentStrikes
+                            + ")");
+            validationFailureCount.put(uuid, 0);
         }
 
         return corrected;
@@ -502,6 +572,7 @@ public class EffectManager {
      */
     public void clearPlayerTracking(Player _p) {
         tracker.clearPlayer(_p);
+        validationFailureCount.remove(_p.getUniqueId());
     }
 
     public static void setSupportedEffects() {

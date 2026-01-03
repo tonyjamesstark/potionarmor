@@ -31,6 +31,10 @@ public class PlayerEffectTracker {
     // Player UUID -> Current disguise identifier (only one disguise at a time)
     private final Map<UUID, String> activeDisguise = new ConcurrentHashMap<>();
 
+    // Cooldown tracking to prevent validation during active equipment changes
+    public static final long VALIDATION_COOLDOWN_MS = 5000L; // 5 seconds
+    private final Map<UUID, Long> lastEquipmentChange = new ConcurrentHashMap<>();
+
     /**
      * Generate a unique identifier for an effect.
      * Format depends on effect type:
@@ -79,6 +83,26 @@ public class PlayerEffectTracker {
         } else if (effect instanceof DisguiseEffect) {
             activeDisguise.put(uuid, effectId);
         }
+    }
+
+    /**
+     * Mark that a player's equipment has changed.
+     * This starts a cooldown period during which validation will be skipped.
+     */
+    public void markEquipmentChange(Player player) {
+        lastEquipmentChange.put(player.getUniqueId(), System.currentTimeMillis());
+    }
+
+    /**
+     * Get time in milliseconds since the player's equipment last changed.
+     * Returns Long.MAX_VALUE if equipment has never changed.
+     */
+    public long getTimeSinceLastChange(Player player) {
+        Long lastChange = lastEquipmentChange.get(player.getUniqueId());
+        if (lastChange == null) {
+            return Long.MAX_VALUE; // Never changed, no cooldown
+        }
+        return System.currentTimeMillis() - lastChange;
     }
 
     /**
@@ -170,6 +194,7 @@ public class PlayerEffectTracker {
         activePotionTypes.remove(uuid);
         activeTrails.remove(uuid);
         activeDisguise.remove(uuid);
+        lastEquipmentChange.remove(uuid);
     }
 
     /**

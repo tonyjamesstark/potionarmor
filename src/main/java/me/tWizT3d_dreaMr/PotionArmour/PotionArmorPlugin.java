@@ -50,8 +50,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     // Task ID for the periodic validation task
     private int validationTaskId = -1;
 
-    // Validation interval in ticks (default: 30 seconds = 600 ticks)
-    private static final long VALIDATION_INTERVAL_TICKS = 600L;
+    // Validation interval in ticks (60 seconds = 1200 ticks, reduced false positives)
+    private static final long VALIDATION_INTERVAL_TICKS = 1200L;
 
     @Override
     public void onEnable() {
