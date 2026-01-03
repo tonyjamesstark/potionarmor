@@ -11,7 +11,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDispenseArmorEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
@@ -381,30 +380,10 @@ public class EventListener implements Listener {
                 .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 10L);
     }
 
-    // Handle inventory close - catch any equipment changes that might have happened
-    // in containers (like anvils, crafting tables, etc.)
-    @EventHandler
-    public void inventoryClose(InventoryCloseEvent e) {
-        if (!(e.getPlayer() instanceof Player)) return;
-
-        final Player p = (Player) e.getPlayer();
-        InventoryType type = e.getInventory().getType();
-
-        // Only check for inventory types that could affect equipment
-        if (type == InventoryType.CRAFTING
-                || type == InventoryType.ANVIL
-                || type == InventoryType.SMITHING
-                || type == InventoryType.GRINDSTONE
-                || type == InventoryType.CHEST
-                || type == InventoryType.ENDER_CHEST
-                || type == InventoryType.SHULKER_BOX
-                || type == InventoryType.BARREL) {
-            // Delayed check to allow inventory to update
-            org.bukkit.Bukkit.getScheduler()
-                    .runTaskLater(
-                            PotionArmorPlugin.plugin, () -> mgr.validateAndFixPlayerEffects(p), 2L);
-        }
-    }
+    // Handle inventory close - equipment changes in containers are handled by
+    // InventoryClickEvent and other specific events. The periodic validation task
+    // will catch any edge cases. Calling validation directly here was causing
+    // the validation to fire too frequently.
 
     // Handle dispenser equipping armor on players
     @EventHandler

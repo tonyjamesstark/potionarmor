@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
+**IMPORTANT:** Do NOT run `mvn package` or `mvn clean package` commands - the user will run these manually. You may run `mvn spotless:apply` for formatting.
+
 ```bash
 # Build the plugin (runs Spotless formatter check + package)
 mvn package

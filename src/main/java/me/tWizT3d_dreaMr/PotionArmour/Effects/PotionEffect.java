@@ -26,7 +26,7 @@ public class PotionEffect extends EquipmentEffect {
         effect = eff.createEffect(MAX_DURATION, _level).withDuration(MAX_DURATION);
         // for some reason saturation constructor overrides durration...this is a bit of a hack
         level = _level;
-        str = "CE " + eff.toString();
+        str = "CE " + eff.toString() + ":" + _level;
     }
 
     @Override
@@ -65,6 +65,21 @@ public class PotionEffect extends EquipmentEffect {
      */
     public org.bukkit.potion.PotionEffectType getEffectType() {
         return this.effect.getType();
+    }
+
+    /**
+     * Get the potion type key (without level) for comparison.
+     * E.g., "minecraft:speed"
+     */
+    public String getPotionTypeKey() {
+        return this.effect.getType().getKey().toString();
+    }
+
+    /**
+     * Get the amplifier level (0-indexed: 0 = Level I, 1 = Level II, etc.)
+     */
+    public int getLevel() {
+        return this.level;
     }
 
     public static PotionEffect fromConfig(EquipmentSlotGroup slot, ConfigurationSection s) {

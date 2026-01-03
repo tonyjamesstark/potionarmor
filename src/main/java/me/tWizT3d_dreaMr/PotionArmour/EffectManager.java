@@ -9,16 +9,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Future;
-import java.util.concurrent.FutureTask;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import me.libraryaddict.disguise.DisguiseAPI;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect.EffectType;
+import me.tWizT3d_dreaMr.PotionArmour.Effects.PotionEffect;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -46,10 +41,6 @@ public class EffectManager {
     // This allows us to only remove OUR effects, not effects from other sources
     private final PlayerEffectTracker tracker = new PlayerEffectTracker();
 
-    // Track consecutive validation failures to prevent false positives
-    private final Map<UUID, Integer> validationFailureCount = new ConcurrentHashMap<>();
-    private int validationStrikesRequired = 2; // Default, configurable
-
     // loreline --> effects list
     private static Map<String, List<EquipmentEffect>> effectsTable =
             new HashMap<String, List<EquipmentEffect>>();
@@ -67,52 +58,12 @@ public class EffectManager {
     }
 
     /**
-     * Set the number of consecutive validation failures required before reset.
-     */
-    public void setValidationStrikesRequired(int strikes) {
-        if (strikes < 1) {
-            p.logger.warning("Validation strikes must be >= 1, using default of 2");
-            this.validationStrikesRequired = 2;
-        } else {
-            this.validationStrikesRequired = strikes;
-        }
-    }
-
-    /**
      * Get detailed validation state for a player (for debugging).
-     * Shows current settings, equipment tracking, validation state, and effect comparison.
+     * Shows tracked vs expected effects.
      */
     public String getValidationDebugInfo(Player _p) {
         StringBuilder sb = new StringBuilder();
         sb.append("Validation Debug Info for ").append(_p.getName()).append(":\n");
-
-        // Current settings
-        sb.append("  Settings:\n");
-        sb.append("    Cooldown: ").append(tracker.getValidationCooldownMs()).append("ms\n");
-        sb.append("    Strikes Required: ").append(validationStrikesRequired).append("\n");
-
-        // Equipment change tracking
-        long timeSince = tracker.getTimeSinceLastChange(_p);
-        sb.append("  Equipment:\n");
-        sb.append("    Time Since Change: ");
-        if (timeSince == Long.MAX_VALUE) {
-            sb.append("Never\n");
-        } else {
-            sb.append(timeSince).append("ms ago\n");
-        }
-        sb.append("    Within Cooldown: ")
-                .append(timeSince < tracker.getValidationCooldownMs())
-                .append("\n");
-
-        // Validation state
-        UUID uuid = _p.getUniqueId();
-        int strikes = validationFailureCount.getOrDefault(uuid, 0);
-        sb.append("  Validation:\n");
-        sb.append("    Current Strikes: ")
-                .append(strikes)
-                .append("/")
-                .append(validationStrikesRequired)
-                .append("\n");
 
         // Effects
         Set<String> tracked = tracker.getTrackedEffects(_p);
@@ -195,54 +146,22 @@ public class EffectManager {
     };
 
     public void resetPlayerEffects(Player _p) {
-        Callable<Void> task =
-                () -> {
-                    p.logger.info("Running task...");
-                    PlayerInventory inv = _p.getInventory();
-                    p.logger.info("adding equipment...");
-                    List<ItemStack> equipment = new ArrayList<ItemStack>();
-                    equipment.addAll(
-                            Arrays.asList(inv.getArmorContents())); // in order, boots, legs, chest,
-                    // helmet
-                    equipment.add(inv.getItemInMainHand());
-                    equipment.add(inv.getItemInOffHand());
+        p.logger.info("Resetting player effects for " + _p.getName());
+        PlayerInventory inv = _p.getInventory();
+        List<ItemStack> equipment = new ArrayList<ItemStack>();
+        equipment.addAll(
+                Arrays.asList(inv.getArmorContents())); // in order, boots, legs, chest, helmet
+        equipment.add(inv.getItemInMainHand());
+        equipment.add(inv.getItemInOffHand());
 
-                    // bukkit methods must be run on main thread
-                    Callable<Void> forMain =
-                            () -> {
-                                p.logger.info("Running forMain...");
-                                // Only remove effects that WE applied, preserving effects from
-                                // other sources (drunk potions, manually added trails, etc.)
-                                clearTrackedEffects(_p);
-                                p.logger.info("cleared tracked effects, returning...");
-                                return null;
-                            };
-                    p.logger.info("submitting task...");
-                    Future<Void> _task =
-                            Bukkit.getServer()
-                                    .getScheduler()
-                                    .callSyncMethod(PotionArmorPlugin.plugin, forMain);
+        // Only remove effects that WE applied, preserving effects from
+        // other sources (drunk potions, manually added trails, etc.)
+        clearTrackedEffects(_p);
 
-                    p.logger.info("syncing threads...");
-                    // must sync here
-                    try {
-                        _task.get(5, TimeUnit.SECONDS);
-                    } catch (Exception e) {
-                        // task failed successfully
-                        p.logger.severe(
-                                "Failed to reset player: " + _p.getName() + " | " + e.toString());
-                        return null;
-                    }
-
-                    p.logger.info("syncing equipment effects...");
-                    for (int i = 0; i < equipment.size(); i++) {
-                        addEquipment(_p, equipment.get(i), slots[i]);
-                    }
-                    return null;
-                };
-        FutureTask<Void> job = new FutureTask<>(task);
-        p.logger.info("submitting task...");
-        p.submitAsyncTask(job);
+        // Re-apply equipment effects
+        for (int i = 0; i < equipment.size(); i++) {
+            addEquipment(_p, equipment.get(i), slots[i]);
+        }
     }
 
     /**
@@ -286,31 +205,94 @@ public class EffectManager {
         tracker.clearPlayer(_p);
     }
 
-    private void removeEffects(Player _p, List<String> lines) {
-        Callable<Void> task =
-                () -> {
-                    for (String loreLine : lines) {
-                        for (EquipmentEffect eff : effectsTable.get(loreLine)) {
-                            // Only remove if we tracked this effect
-                            if (!tracker.isTracked(_p, eff)) {
-                                continue;
-                            }
-                            // bukkit methods must be run on main thread
-                            Callable<Void> mainTask =
-                                    () -> {
-                                        eff.removeFrom(_p);
-                                        tracker.untrackEffect(_p, eff);
-                                        return null;
-                                    };
-                            Bukkit.getServer()
-                                    .getScheduler()
-                                    .callSyncMethod(PotionArmorPlugin.plugin, mainTask);
-                        }
+    /**
+     * Find the highest level of a potion effect type that remains on equipped items
+     * (excluding the item being removed).
+     *
+     * @param _p The player
+     * @param potionTypeKey The potion type key (e.g., "minecraft:speed")
+     * @param excludingItem The item being removed (to exclude from check)
+     * @return The highest remaining level (-1 if none found)
+     */
+    private int getHighestRemainingLevel(Player _p, String potionTypeKey, ItemStack excludingItem) {
+        int highestLevel = -1;
+
+        ArrayList<ItemStack> equipped = new ArrayList<>();
+        equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
+        equipped.add(_p.getInventory().getItemInMainHand());
+        equipped.add(_p.getInventory().getItemInOffHand());
+
+        for (int idx = 0; idx < equipped.size(); idx++) {
+            ItemStack item = equipped.get(idx);
+            if (item == null || item.getType() == Material.AIR) continue;
+
+            // Skip the item being removed
+            if (excludingItem != null && item.isSimilar(excludingItem)) continue;
+
+            List<String> lore = getLore(item);
+            if (lore == null) continue;
+
+            EquipmentSlot slot = slots[idx];
+
+            for (String loreline : getCached(lore)) {
+                if (!effectsTable.containsKey(loreline)) continue;
+                for (EquipmentEffect eff : effectsTable.get(loreline)) {
+                    if (!eff.slot.test(slot)) continue;
+                    if (!(eff instanceof PotionEffect)) continue;
+
+                    PotionEffect pe = (PotionEffect) eff;
+                    if (pe.getPotionTypeKey().equals(potionTypeKey)) {
+                        highestLevel = Math.max(highestLevel, pe.getLevel());
                     }
-                    return null;
-                };
-        FutureTask<Void> job = new FutureTask<Void>(task);
-        p.submitAsyncTask(job);
+                }
+            }
+        }
+        return highestLevel;
+    }
+
+    private void removeEffects(Player _p, List<String> lines, ItemStack removedItem) {
+        for (String loreLine : lines) {
+            for (EquipmentEffect eff : effectsTable.get(loreLine)) {
+                // Only remove if we tracked this effect
+                if (!tracker.isTracked(_p, eff)) {
+                    continue;
+                }
+
+                // For potion effects, handle level overlapping
+                if (eff instanceof PotionEffect) {
+                    PotionEffect pe = (PotionEffect) eff;
+                    int highestRemaining =
+                            getHighestRemainingLevel(_p, pe.getPotionTypeKey(), removedItem);
+
+                    if (highestRemaining >= pe.getLevel()) {
+                        // A higher or equal level will remain - skip actual removal
+                        // Just untrack this specific effect
+                        tracker.untrackEffect(_p, eff);
+                        continue;
+                    } else if (highestRemaining > 0) {
+                        // Removing a higher level effect, but a lower level remains
+                        // Remove the current effect and re-apply the lower level
+                        eff.removeFrom(_p);
+                        tracker.untrackEffect(_p, eff);
+
+                        // Re-apply the highest remaining level from other equipment
+                        // Convert the potion type key back to PotionEffectType
+                        NamespacedKey key = NamespacedKey.fromString(pe.getPotionTypeKey());
+                        PotionEffectType effectType = Registry.EFFECT.get(key);
+
+                        PotionEffect lowerEffect =
+                                new PotionEffect(pe.slot, effectType, highestRemaining);
+                        lowerEffect.applyTo(_p);
+                        tracker.trackEffect(_p, lowerEffect);
+                        continue;
+                    }
+                }
+
+                // Remove effect and untrack it
+                eff.removeFrom(_p);
+                tracker.untrackEffect(_p, eff);
+            }
+        }
     }
 
     public void resetLoreCache() {
@@ -322,47 +304,30 @@ public class EffectManager {
     }
 
     private void addEquipment(Player _p, ItemStack i, EquipmentSlot slot, boolean apply) {
-        tracker.markEquipmentChange(_p);
-        validationFailureCount.put(_p.getUniqueId(), 0);
-
         List<String> lore = getLore(i);
         if (lore == null || _p == null) return;
-        Callable<Void> task =
-                () -> {
-                    for (String line : getCached(lore)) {
-                        for (EquipmentEffect eff : effectsTable.get(line)) {
-                            if (!eff.slot.test(slot)) { // could probably move to outer loop
-                                continue;
-                            }
 
-                            if (!isEnabled.get(EquipmentEffect.getType(eff))) {
-                                PotionArmorPlugin.plugin.logger.severe(
-                                        "Type not enabled: " + eff.toString());
-                                continue;
-                            }
+        for (String line : getCached(lore)) {
+            for (EquipmentEffect eff : effectsTable.get(line)) {
+                if (!eff.slot.test(slot)) {
+                    continue;
+                }
 
-                            // Skip if already tracked (prevents duplicate applications)
-                            if (tracker.isTracked(_p, eff)) {
-                                continue;
-                            }
+                if (!isEnabled.get(EquipmentEffect.getType(eff))) {
+                    PotionArmorPlugin.plugin.logger.severe("Type not enabled: " + eff.toString());
+                    continue;
+                }
 
-                            // bukkit methods must be run on main thread
-                            Callable<Void> mainTask =
-                                    () -> {
-                                        eff.applyTo(_p);
-                                        // Track that we applied this effect
-                                        tracker.trackEffect(_p, eff);
-                                        return null;
-                                    };
-                            Bukkit.getServer()
-                                    .getScheduler()
-                                    .callSyncMethod(PotionArmorPlugin.plugin, mainTask);
-                        }
-                    }
-                    return null;
-                };
-        FutureTask<Void> job = new FutureTask<Void>(task);
-        p.submitAsyncTask(job);
+                // Skip if already tracked (prevents duplicate applications)
+                if (tracker.isTracked(_p, eff)) {
+                    continue;
+                }
+
+                // Apply effect and track it
+                eff.applyTo(_p);
+                tracker.trackEffect(_p, eff);
+            }
+        }
     }
 
     public List<String> getCached(List<String> lore) {
@@ -391,14 +356,11 @@ public class EffectManager {
     }
 
     private void removeEquipment(Player _p, ItemStack i, boolean apply) {
-        tracker.markEquipmentChange(_p);
-        validationFailureCount.put(_p.getUniqueId(), 0);
-
         List<String> lore = getLore(i);
         if (i == null || i.getType() == Material.AIR || lore == null || _p == null) return;
         String key = loreKey(lore);
         if (!loreCache.containsKey(key)) return;
-        removeEffects(_p, loreCache.get(key));
+        removeEffects(_p, loreCache.get(key), i);
 
         // Re-apply ALL effect types from remaining equipment
         // This fixes the issue where trails and disguises were not being re-applied
@@ -412,79 +374,64 @@ public class EffectManager {
      * The tracker prevents duplicate applications.
      */
     private void reapplyEffectsFromEquipment(Player _p) {
-        Callable<Void> task =
-                () -> {
-                    ArrayList<ItemStack> equipped = new ArrayList<>();
-                    equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
-                    equipped.add(_p.getInventory().getItemInMainHand());
-                    equipped.add(_p.getInventory().getItemInOffHand());
+        ArrayList<ItemStack> equipped = new ArrayList<>();
+        equipped.addAll(Arrays.asList(_p.getEquipment().getArmorContents()));
+        equipped.add(_p.getInventory().getItemInMainHand());
+        equipped.add(_p.getInventory().getItemInOffHand());
 
-                    for (int idx = 0; idx < equipped.size(); idx++) {
-                        ItemStack j = equipped.get(idx);
-                        if (j == null || j.getType() == Material.AIR) continue;
+        for (int idx = 0; idx < equipped.size(); idx++) {
+            ItemStack j = equipped.get(idx);
+            if (j == null || j.getType() == Material.AIR) continue;
 
-                        List<String> _lore = getLore(j);
-                        if (_lore == null) continue;
+            List<String> _lore = getLore(j);
+            if (_lore == null) continue;
 
-                        EquipmentSlot slot = slots[idx];
+            EquipmentSlot slot = slots[idx];
 
-                        for (String loreline : getCached(_lore)) {
-                            for (EquipmentEffect eff : effectsTable.get(loreline)) {
-                                if (!eff.slot.test(slot)) continue;
-                                if (!isEnabled.get(EquipmentEffect.getType(eff))) continue;
+            for (String loreline : getCached(_lore)) {
+                for (EquipmentEffect eff : effectsTable.get(loreline)) {
+                    if (!eff.slot.test(slot)) continue;
+                    if (!isEnabled.get(EquipmentEffect.getType(eff))) continue;
 
-                                // Skip if already tracked (prevents duplicates)
-                                if (tracker.isTracked(_p, eff)) continue;
-
-                                // Apply on main thread
-                                Callable<Void> mainTask =
-                                        () -> {
-                                            eff.applyTo(_p);
-                                            tracker.trackEffect(_p, eff);
-                                            return null;
-                                        };
-                                Bukkit.getServer()
-                                        .getScheduler()
-                                        .callSyncMethod(PotionArmorPlugin.plugin, mainTask);
-                            }
-                        }
-                    }
-                    return null;
-                };
-        FutureTask<Void> job = new FutureTask<Void>(task);
-        p.submitAsyncTask(job);
+                    // Always apply - Bukkit's addPotionEffect() handles duplicates
+                    // correctly (keeps higher/longer effects). trackEffect() uses
+                    // a Set so duplicate tracking calls are safe.
+                    eff.applyTo(_p);
+                    tracker.trackEffect(_p, eff);
+                }
+            }
+        }
     }
 
     public void refreshAppliedEquipment(Player _p, ItemStack toExclude) {
         // this only re-applies effects from equipment, it does not remove effects
         // TODO factor this (code adapted from resetPlayerEffects)
-        Callable<Void> task =
-                () -> {
-                    PlayerInventory inv = _p.getInventory();
-                    List<ItemStack> equipment = new ArrayList<ItemStack>();
-                    equipment.addAll(
-                            Arrays.asList(inv.getArmorContents())); // in order, boots, legs, chest,
-                    // helmet
-                    equipment.add(inv.getItemInMainHand());
-                    equipment.add(inv.getItemInOffHand());
+        // Delay by 1 tick (20ms) to ensure inventory is updated
+        Bukkit.getScheduler()
+                .runTaskLater(
+                        p,
+                        () -> {
+                            PlayerInventory inv = _p.getInventory();
+                            List<ItemStack> equipment = new ArrayList<ItemStack>();
+                            equipment.addAll(
+                                    Arrays.asList(
+                                            inv.getArmorContents())); // in order, boots, legs,
+                            // chest, helmet
+                            equipment.add(inv.getItemInMainHand());
+                            equipment.add(inv.getItemInOffHand());
 
-                    for (int i = 0; i < equipment.size(); i++) {
-                        ItemStack toAdd = equipment.get(i);
-                        if ((toExclude != null) && (toAdd.isSimilar(toExclude))) {
-                            continue;
-                        }
-                        addEquipment(_p, toAdd, slots[i]);
-                    }
-                    return null;
-                };
-        FutureTask<Void> job = new FutureTask<>(task);
-        p.submitAsyncTaskLater(job, 20, TimeUnit.MILLISECONDS);
+                            for (int i = 0; i < equipment.size(); i++) {
+                                ItemStack toAdd = equipment.get(i);
+                                if ((toExclude != null) && (toAdd.isSimilar(toExclude))) {
+                                    continue;
+                                }
+                                addEquipment(_p, toAdd, slots[i]);
+                            }
+                        },
+                        1L); // 1 tick = 20ms
     }
 
     public void replaceEquipment(Player _p, ItemStack _new, ItemStack _old, EquipmentSlot slot) {
-        tracker.markEquipmentChange(_p);
-        validationFailureCount.put(_p.getUniqueId(), 0);
-
         // TODO: figure out if bugs when new and old have overlapping effects
         if (_old != null) {
             removeEquipment(_p, _old);
@@ -552,111 +499,50 @@ public class EffectManager {
      * Returns true if any corrections were made.
      */
     public boolean validateAndFixPlayerEffects(Player _p) {
-        // Skip validation if equipment changed recently (cooldown period)
-        long timeSinceChange = tracker.getTimeSinceLastChange(_p);
-        if (timeSinceChange < tracker.getValidationCooldownMs()) {
-            p.logger.fine(
-                    "Skipping validation for "
-                            + _p.getName()
-                            + " - equipment changed "
-                            + timeSinceChange
-                            + "ms ago (cooldown: "
-                            + tracker.getValidationCooldownMs()
-                            + "ms)");
-            return false;
-        }
-
         Set<String> expected = calculateExpectedEffects(_p);
         Set<String> tracked = tracker.getTrackedEffects(_p);
-        boolean corrected = false;
-
-        UUID uuid = _p.getUniqueId();
-        int currentStrikes = validationFailureCount.getOrDefault(uuid, 0);
 
         // Find effects that are tracked but shouldn't be (orphaned)
         Set<String> orphaned = new HashSet<>(tracked);
         orphaned.removeAll(expected);
 
-        if (!orphaned.isEmpty()) {
-            currentStrikes++;
-            validationFailureCount.put(uuid, currentStrikes);
-
-            p.logger.warning(
-                    "Found "
-                            + orphaned.size()
-                            + " orphaned effects on "
-                            + _p.getName()
-                            + " (strike "
-                            + currentStrikes
-                            + "/"
-                            + validationStrikesRequired
-                            + "): "
-                            + orphaned);
-
-            if (currentStrikes >= validationStrikesRequired) {
-                p.logger.warning(
-                        "Validation strike threshold reached for "
-                                + _p.getName()
-                                + " - triggering effect reset");
-                resetPlayerEffects(_p);
-                validationFailureCount.put(uuid, 0); // Reset after correction
-                corrected = true;
-            }
-            return corrected;
-        }
-
-        // Find effects that should be active but aren't tracked
+        // Find effects that should be active but aren't tracked (missing)
         Set<String> missing = new HashSet<>(expected);
         missing.removeAll(tracked);
 
-        if (!missing.isEmpty()) {
-            currentStrikes++;
-            validationFailureCount.put(uuid, currentStrikes);
-
-            p.logger.warning(
-                    "Found "
-                            + missing.size()
-                            + " missing effects on "
-                            + _p.getName()
-                            + " (strike "
-                            + currentStrikes
-                            + "/"
-                            + validationStrikesRequired
-                            + "): "
-                            + missing);
-
-            if (currentStrikes >= validationStrikesRequired) {
+        // If any mismatches found, reset player effects
+        if (!orphaned.isEmpty() || !missing.isEmpty()) {
+            if (!orphaned.isEmpty()) {
                 p.logger.warning(
-                        "Validation strike threshold reached for "
+                        "Found "
+                                + orphaned.size()
+                                + " orphaned effects on "
                                 + _p.getName()
-                                + " - triggering effect reapply");
-                reapplyEffectsFromEquipment(_p);
-                validationFailureCount.put(uuid, 0); // Reset after correction
-                corrected = true;
+                                + ": "
+                                + orphaned);
             }
-            return corrected;
+            if (!missing.isEmpty()) {
+                p.logger.warning(
+                        "Found "
+                                + missing.size()
+                                + " missing effects on "
+                                + _p.getName()
+                                + ": "
+                                + missing);
+            }
+            p.logger.info("Resetting effects for " + _p.getName());
+            resetPlayerEffects(_p);
+            return true;
         }
 
-        // Validation passed - reset strike counter
-        if (currentStrikes > 0) {
-            p.logger.fine(
-                    "Validation passed for "
-                            + _p.getName()
-                            + " - resetting strike counter (was "
-                            + currentStrikes
-                            + ")");
-            validationFailureCount.put(uuid, 0);
-        } else {
-            // Log successful validation even with no prior strikes (at FINE level)
-            p.logger.fine(
-                    "Validation passed for "
-                            + _p.getName()
-                            + " - "
-                            + tracked.size()
-                            + " effects matched");
-        }
-
-        return corrected;
+        // Validation passed
+        p.logger.fine(
+                "Validation passed for "
+                        + _p.getName()
+                        + " - "
+                        + tracked.size()
+                        + " effects matched");
+        return false;
     }
 
     /**
@@ -665,7 +551,6 @@ public class EffectManager {
      */
     public void clearPlayerTracking(Player _p) {
         tracker.clearPlayer(_p);
-        validationFailureCount.remove(_p.getUniqueId());
     }
 
     public static void setSupportedEffects() {
@@ -687,29 +572,21 @@ public class EffectManager {
     public void hatCommand(Player _p) {
         ItemStack oldHat = _p.getInventory().getHelmet();
         ItemStack oldMain = _p.getInventory().getItemInMainHand();
-        Callable<Void> task =
-                () -> {
-                    ItemStack newHat = _p.getInventory().getHelmet();
-                    ItemStack newMain = _p.getInventory().getItemInMainHand();
-                    if (!(newHat.isSimilar(oldHat) && newMain.isSimilar(oldMain))) {
-                        // WHY IS THIS ERRORING?
-                        // ADDEQUIPMENT() SHOULD CALL MAIN THREAD
-                        // bukkit methods must be run on main thread
-                        Callable<Void> mainTask =
-                                () -> {
-                                    removeEquipment(_p, oldHat);
-                                    removeEquipment(_p, oldMain);
-                                    addEquipment(_p, newHat, EquipmentSlot.HEAD);
-                                    addEquipment(_p, newMain, EquipmentSlot.HAND);
-                                    return null;
-                                };
-                        Bukkit.getServer()
-                                .getScheduler()
-                                .callSyncMethod(PotionArmorPlugin.plugin, mainTask);
-                    }
-                    return null;
-                };
-        FutureTask<Void> job = new FutureTask<Void>(task);
-        p.submitAsyncTaskLater(job, 40, TimeUnit.MILLISECONDS);
+
+        // Delay by 2 ticks (40ms) to ensure inventory is updated after Essentials' /hat command
+        Bukkit.getScheduler()
+                .runTaskLater(
+                        p,
+                        () -> {
+                            ItemStack newHat = _p.getInventory().getHelmet();
+                            ItemStack newMain = _p.getInventory().getItemInMainHand();
+                            if (!(newHat.isSimilar(oldHat) && newMain.isSimilar(oldMain))) {
+                                removeEquipment(_p, oldHat);
+                                removeEquipment(_p, oldMain);
+                                addEquipment(_p, newHat, EquipmentSlot.HEAD);
+                                addEquipment(_p, newMain, EquipmentSlot.HAND);
+                            }
+                        },
+                        2L); // 2 ticks = 40ms
     }
 }

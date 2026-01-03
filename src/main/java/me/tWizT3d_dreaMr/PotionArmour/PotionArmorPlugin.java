@@ -6,10 +6,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-// import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
@@ -38,24 +34,12 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     public EventListener listener;
     public EffectManager manager;
 
-    // need to periodically purge cancelled tasks?
-
-    private ScheduledThreadPoolExecutor pool;
-    // private ArrayBlockingQueue<Runnable> workQueue;
-    private AsyncOptions opt;
-    private boolean workAsync;
-    private boolean acceptNewJobs = false;
-
-    // private final int DEFAULT_NTHREADS = 4;
-
     // Task ID for the periodic validation task
     private int validationTaskId = -1;
 
     // Validation configuration (loaded from config.yml)
     private boolean validationEnabled = true;
-    private long validationIntervalTicks = 600L; // Default 30s
-    private int validationCooldownSeconds = 5;
-    private int validationStrikesRequired = 2;
+    private long validationIntervalTicks = 1200L; // Default 60s
 
     @Override
     public void onEnable() {
@@ -67,20 +51,6 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         this.manager = new EffectManager(this);
         this.listener = new EventListener(manager);
 
-        // if config not yet loaded assume will be using action queue
-        this.workAsync = config != null ? config.getBoolean("meta.async") : true;
-        if (workAsync) {
-            // if (config != null){
-            this.opt = AsyncOptions.fromConfig(config);
-            // workQueue = new ArrayBlockingQueue<Runnable>(opt.queueCapacity);
-            this.pool = new ScheduledThreadPoolExecutor(opt.nThreads);
-            // } else{
-            // this.pool = new ScheduledThreadPoolExecutor(DEFAULT_NTHREADS);
-            // }
-
-            this.acceptNewJobs = false;
-        }
-
         // load effects later so PlayerParticles has a chance to populate its lookup
         // tables
         Runnable job =
@@ -88,9 +58,6 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
                     int loaded = manager.loadEffects(config);
                     logger.info(loaded + " effects loaded");
                     // manager.loadEffects(moreEffectsConfig); to add for 'effects/' dir
-
-                    // also enable action queue at later time
-                    this.acceptNewJobs = this.workAsync;
 
                     // Start the periodic validation task
                     startValidationTask();
@@ -143,9 +110,6 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             Bukkit.getScheduler().cancelTask(validationTaskId);
             validationTaskId = -1;
         }
-
-        if (workAsync) cancelAllTasks();
-        pool.close();
     }
 
     @Override
@@ -223,7 +187,6 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     }
 
     public boolean reloadConfigs(CommandSender sender, boolean isSetup) {
-        acceptNewJobs = false;
         boolean saveNeeded = false;
         if (!checkPerms(sender, "Potionarmor.reload", false)) {
             String msg = "&cNo permission";
@@ -260,8 +223,6 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         this.logger.setLevel(loglevel);
         logger.info("Logging level set to " + loglevel.getName());
 
-        this.opt = AsyncOptions.fromConfig(config);
-
         // Load validation configuration
         ConfigurationSection validationSection =
                 this.config.getConfigurationSection("meta.validation");
@@ -284,29 +245,12 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             }
             validationIntervalTicks = intervalSecs * 20L;
 
-            validationCooldownSeconds = validationSection.getInt("cooldown_seconds", 5);
-            if (validationCooldownSeconds < 0) {
-                logger.warning("Validation cooldown cannot be negative, using 5s");
-                validationCooldownSeconds = 5;
-            }
-
-            validationStrikesRequired = validationSection.getInt("strikes_required", 2);
-            if (validationStrikesRequired < 1) {
-                logger.warning("Validation strikes must be >= 1, using 2");
-                validationStrikesRequired = 2;
-            }
-
             logger.info(
                     "Validation settings: enabled="
                             + validationEnabled
                             + ", interval="
                             + (validationIntervalTicks / 20)
-                            + "s"
-                            + ", cooldown="
-                            + validationCooldownSeconds
-                            + "s"
-                            + ", strikes="
-                            + validationStrikesRequired);
+                            + "s");
         } else {
             logger.info("No validation config section found, using defaults");
         }
@@ -333,16 +277,6 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
             this.manager.resetLoreCache();
             int loadedEffects = this.manager.loadEffects(this.config);
             logger.log(Level.INFO, "Loaded " + loadedEffects + " effects.");
-
-            // Apply validation configuration to manager
-            manager.getTracker().setValidationCooldown(validationCooldownSeconds * 1000L);
-            manager.setValidationStrikesRequired(validationStrikesRequired);
-
-            acceptNewJobs = this.workAsync;
-            if (this.workAsync != this.config.getBoolean("meta.async")) {
-                this.logger.log(Level.SEVERE, "To change async option, must restart.");
-                sender.sendMessage(this.lang.getString("change_async"));
-            }
         }
 
         sender.sendMessage(
@@ -499,68 +433,5 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         sender.sendMessage("========================");
 
         return true;
-    }
-
-    private static final class AsyncOptions {
-        int nThreads;
-        int maxThreads;
-        long timeout;
-        TimeUnit timeUnit;
-        int queueCapacity;
-
-        public AsyncOptions(
-                int nThreads, int maxThreads, long timeout, TimeUnit timeUnit, int queueCapacity) {
-            this.nThreads = nThreads;
-            this.maxThreads = maxThreads;
-            this.timeout = timeout;
-            this.timeUnit = timeUnit;
-            this.queueCapacity = queueCapacity;
-        }
-
-        private static AsyncOptions fromConfig(ConfigurationSection s) {
-            ConfigurationSection meta = s.getConfigurationSection("meta");
-            int nThreads = meta.getInt("threads", 4);
-            int maxThreads = meta.getInt("maxThreads", 10);
-            long timeout = meta.getLong("timeout", 60);
-            TimeUnit timeUnit = TimeUnit.SECONDS;
-            String timeUnitString = meta.getString("unit", "SECONDS").toUpperCase();
-            try {
-                timeUnit = TimeUnit.valueOf(timeUnitString);
-            } catch (IllegalArgumentException e) {
-                ((PotionArmorPlugin) PotionArmorPlugin.plugin)
-                        .logger.log(
-                                Level.SEVERE, "Invalid timeout units in meta: " + timeUnitString);
-            }
-            int queueCapacity = meta.getInt("capacity", 200);
-            return new AsyncOptions(nThreads, maxThreads, timeout, timeUnit, queueCapacity);
-        }
-    }
-
-    public void submitAsyncTask(Runnable job) {
-        submitAsyncTaskLater(job, 0, TimeUnit.SECONDS);
-    }
-
-    public void submitAsyncTaskLater(Runnable job, long delay, TimeUnit unit) {
-        if (!workAsync) {
-            job.run(); // blocks
-            return;
-        }
-        if (acceptNewJobs) {
-            try {
-                pool.schedule(job, delay, unit);
-            } catch (RejectedExecutionException e) {
-                logger.log(
-                        Level.SEVERE,
-                        "Job queue is full, rejecting event...try increasing capcaity");
-            }
-        }
-    }
-
-    public void cancelAllTasks() {
-        if (!workAsync) return;
-        for (Runnable job : pool.getQueue()) {
-            pool.remove(job);
-        }
-        pool.purge();
     }
 }

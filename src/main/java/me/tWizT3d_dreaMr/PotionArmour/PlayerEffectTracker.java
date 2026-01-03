@@ -2,10 +2,11 @@
 package me.tWizT3d_dreaMr.PotionArmour;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.DisguiseEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.PotionEffect;
@@ -20,20 +21,16 @@ import org.bukkit.entity.Player;
 public class PlayerEffectTracker {
 
     // Player UUID -> Set of effect identifiers that this plugin has applied
-    private final Map<UUID, Set<String>> activeEffects = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<String>> activeEffects = new HashMap<>();
 
     // Player UUID -> Set of potion effect type keys (e.g., "minecraft:regeneration")
-    private final Map<UUID, Set<String>> activePotionTypes = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<String>> activePotionTypes = new HashMap<>();
 
     // Player UUID -> Set of trail effect identifiers (particle type + style)
-    private final Map<UUID, Set<String>> activeTrails = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<String>> activeTrails = new HashMap<>();
 
     // Player UUID -> Current disguise identifier (only one disguise at a time)
-    private final Map<UUID, String> activeDisguise = new ConcurrentHashMap<>();
-
-    // Cooldown tracking to prevent validation during active equipment changes
-    private long validationCooldownMs = 5000L; // Default 5 seconds
-    private final Map<UUID, Long> lastEquipmentChange = new ConcurrentHashMap<>();
+    private final Map<UUID, String> activeDisguise = new HashMap<>();
 
     /**
      * Generate a unique identifier for an effect.
@@ -70,53 +67,23 @@ public class PlayerEffectTracker {
         String effectId = getEffectId(effect);
 
         // Add to general tracking set
-        activeEffects.computeIfAbsent(uuid, k -> ConcurrentHashMap.newKeySet()).add(effectId);
+        activeEffects
+                .computeIfAbsent(uuid, k -> Collections.synchronizedSet(new HashSet<>()))
+                .add(effectId);
 
         // Type-specific tracking
         if (effect instanceof PotionEffect) {
             PotionEffect pe = (PotionEffect) effect;
             activePotionTypes
-                    .computeIfAbsent(uuid, k -> ConcurrentHashMap.newKeySet())
+                    .computeIfAbsent(uuid, k -> Collections.synchronizedSet(new HashSet<>()))
                     .add(getPotionTypeKey(pe));
         } else if (effect instanceof TrailEffect) {
-            activeTrails.computeIfAbsent(uuid, k -> ConcurrentHashMap.newKeySet()).add(effectId);
+            activeTrails
+                    .computeIfAbsent(uuid, k -> Collections.synchronizedSet(new HashSet<>()))
+                    .add(effectId);
         } else if (effect instanceof DisguiseEffect) {
             activeDisguise.put(uuid, effectId);
         }
-    }
-
-    /**
-     * Set the validation cooldown period in milliseconds.
-     */
-    public void setValidationCooldown(long milliseconds) {
-        this.validationCooldownMs = milliseconds;
-    }
-
-    /**
-     * Get the current validation cooldown period in milliseconds.
-     */
-    public long getValidationCooldownMs() {
-        return validationCooldownMs;
-    }
-
-    /**
-     * Mark that a player's equipment has changed.
-     * This starts a cooldown period during which validation will be skipped.
-     */
-    public void markEquipmentChange(Player player) {
-        lastEquipmentChange.put(player.getUniqueId(), System.currentTimeMillis());
-    }
-
-    /**
-     * Get time in milliseconds since the player's equipment last changed.
-     * Returns Long.MAX_VALUE if equipment has never changed.
-     */
-    public long getTimeSinceLastChange(Player player) {
-        Long lastChange = lastEquipmentChange.get(player.getUniqueId());
-        if (lastChange == null) {
-            return Long.MAX_VALUE; // Never changed, no cooldown
-        }
-        return System.currentTimeMillis() - lastChange;
     }
 
     /**
@@ -208,7 +175,6 @@ public class PlayerEffectTracker {
         activePotionTypes.remove(uuid);
         activeTrails.remove(uuid);
         activeDisguise.remove(uuid);
-        lastEquipmentChange.remove(uuid);
     }
 
     /**
