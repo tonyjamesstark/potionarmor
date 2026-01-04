@@ -53,10 +53,11 @@ public class PlayerEffectTracker {
 
     /**
      * Get the potion type key from a PotionEffect for tracking.
+     * Uses the namespaced key (e.g., "minecraft:regeneration") without level.
      */
     public static String getPotionTypeKey(PotionEffect effect) {
-        // Extract the potion effect type from the effect
-        return effect.toString(); // "CE minecraft:regeneration" etc.
+        // Use the potion type key without level for tracking
+        return effect.getPotionTypeKey(); // "minecraft:regeneration"
     }
 
     /**

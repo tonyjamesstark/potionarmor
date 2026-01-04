@@ -78,25 +78,41 @@ public class EventListener implements Listener {
     // inventory click
     @EventHandler
     public void invClick(InventoryClickEvent e) {
-        PotionArmorPlugin.plugin.logger.info("invClick called");
         if (!(e.getWhoClicked() instanceof Player)) {
             return;
         }
         final Player p = (Player) e.getWhoClicked();
 
+        String actionName = e.getAction().name();
+        PotionArmorPlugin.plugin.logger.info(
+                "invClick: action="
+                        + actionName
+                        + " slot="
+                        + e.getSlot()
+                        + " type="
+                        + e.getSlotType());
+
         // Handle shift-click and number-key moves with a full reset
         // These actions move items between slots in ways that are hard to track precisely
-        String actionName = e.getAction().name();
-        if (actionName.contains("MOVE") || actionName.contains("HOTBAR")) {
+        // Use 2 tick delay to ensure inventory has updated after the click is processed
+        org.bukkit.event.inventory.InventoryAction action = e.getAction();
+        if (action == org.bukkit.event.inventory.InventoryAction.MOVE_TO_OTHER_INVENTORY
+                || action == org.bukkit.event.inventory.InventoryAction.HOTBAR_SWAP
+                || action == org.bukkit.event.inventory.InventoryAction.HOTBAR_MOVE_AND_READD) {
+            PotionArmorPlugin.plugin.logger.info("invClick: scheduling reset for " + action);
             org.bukkit.Bukkit.getScheduler()
-                    .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
+                    .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 2L);
             return;
         }
 
         EquipmentSlot slot = null;
 
+        // Check offhand first (slot 45) - must be before QUICKBAR check
+        if (e.getSlot() == UNKNOWN_SLOT_NUM) {
+            slot = EquipmentSlot.OFF_HAND;
+        }
         // Handle armor slots (direct clicking, etc.)
-        if (e.getSlotType() == InventoryType.SlotType.ARMOR) {
+        else if (e.getSlotType() == InventoryType.SlotType.ARMOR) {
             // Map armor slot to EquipmentSlot
             switch (e.getSlot()) {
                 case 36: // boots
@@ -121,9 +137,6 @@ public class EventListener implements Listener {
             } else {
                 return; // other quickbar slots don't matter
             }
-        } else if (e.getSlot() == UNKNOWN_SLOT_NUM) {
-            // Handle offhand (slot 45) - can be accessed from various slot types in inventory GUI
-            slot = EquipmentSlot.OFF_HAND;
         } else {
             return; // only act on armor, main hand, and offhand slots
         }
@@ -277,17 +290,10 @@ public class EventListener implements Listener {
         PotionArmorPlugin.plugin.logger.info("swapHands called");
         final Player p = e.getPlayer();
 
-        // e.getMainHandItem() = item that WILL BE in main hand after swap
-        // e.getOffHandItem() = item that WILL BE in off hand after swap
-        ItemStack newMain = e.getMainHandItem();
-        ItemStack newOff = e.getOffHandItem();
-
-        // Current items (before the swap completes)
-        ItemStack oldMain = p.getInventory().getItemInMainHand();
-        ItemStack oldOff = p.getInventory().getItemInOffHand();
-
-        mgr.replaceEquipment(p, newMain, oldMain, EquipmentSlot.HAND);
-        mgr.replaceEquipment(p, newOff, oldOff, EquipmentSlot.OFF_HAND);
+        // Swap is complex - both hands change simultaneously
+        // Use a delayed reset to ensure inventory state is updated
+        org.bukkit.Bukkit.getScheduler()
+                .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 2L);
     }
 
     // handle inventory drag events (e.g., dragging armor into armor slots)

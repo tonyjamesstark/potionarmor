@@ -155,7 +155,10 @@ public class EffectManager {
      */
     public void resetPlayerEffects(Player player) {
         plugin.logger.info("Resetting player effects for " + player.getName());
+        Set<String> beforeTracked = tracker.getTrackedPotionTypes(player);
+        plugin.logger.info("Before reset - tracked potions: " + beforeTracked);
         List<ItemStack> equipment = getEquippedItems(player);
+        plugin.logger.info("Equipment slots: " + equipment.size());
 
         // Only remove effects that WE applied, preserving effects from
         // other sources (drunk potions, manually added trails, etc.)
@@ -176,7 +179,8 @@ public class EffectManager {
         if (isEnabled.get(EffectType.POTION)) {
             Set<String> trackedPotions = tracker.getTrackedPotionTypes(player);
             for (org.bukkit.potion.PotionEffect active : player.getActivePotionEffects()) {
-                String potionKey = "CE " + active.getType().toString();
+                // Use namespaced key to match tracking format (e.g., "minecraft:regeneration")
+                String potionKey = active.getType().getKey().toString();
                 if (trackedPotions.contains(potionKey)) {
                     player.removePotionEffect(active.getType());
                 }
@@ -405,20 +409,27 @@ public class EffectManager {
         // Re-apply ALL effect types from remaining equipment
         // This fixes the issue where trails and disguises were not being re-applied
         // when removing one piece of equipment that shared effects with another
-        reapplyEffectsFromEquipment(player);
+        // Pass the removed item to exclude it (important for events that fire before inventory
+        // updates)
+        reapplyEffectsFromEquipment(player, item);
     }
 
     /**
      * Re-apply all effects from currently equipped items.
      * This is called after removing equipment to ensure overlapping effects are restored.
      * The tracker prevents duplicate applications.
+     *
+     * @param player The player
+     * @param excludeItem Item to exclude (the one being removed, may still be in inventory during event)
      */
-    private void reapplyEffectsFromEquipment(Player player) {
+    private void reapplyEffectsFromEquipment(Player player, ItemStack excludeItem) {
         List<ItemStack> equipped = getEquippedItems(player);
 
         for (int idx = 0; idx < equipped.size(); idx++) {
             ItemStack currentItem = equipped.get(idx);
             if (currentItem == null || currentItem.getType() == Material.AIR) continue;
+            // Skip the item being removed (it may still be in the slot during event processing)
+            if (excludeItem != null && currentItem.isSimilar(excludeItem)) continue;
 
             List<String> _lore = getLore(currentItem);
             if (_lore == null) continue;
