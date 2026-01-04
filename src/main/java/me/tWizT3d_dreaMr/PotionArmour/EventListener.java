@@ -81,9 +81,19 @@ public class EventListener implements Listener {
             return;
         }
         final Player p = (Player) e.getWhoClicked();
+
+        // Handle shift-click and number-key moves with a full reset
+        // These actions move items between slots in ways that are hard to track precisely
+        String actionName = e.getAction().name();
+        if (actionName.contains("MOVE") || actionName.contains("HOTBAR")) {
+            org.bukkit.Bukkit.getScheduler()
+                    .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
+            return;
+        }
+
         EquipmentSlot slot = null;
 
-        // Handle armor slots (shift-clicking, direct clicking, etc.)
+        // Handle armor slots (direct clicking, etc.)
         if (e.getSlotType() == InventoryType.SlotType.ARMOR) {
             // Map armor slot to EquipmentSlot
             switch (e.getSlot()) {
@@ -380,10 +390,17 @@ public class EventListener implements Listener {
                 .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 10L);
     }
 
-    // Handle inventory close - equipment changes in containers are handled by
-    // InventoryClickEvent and other specific events. The periodic validation task
-    // will catch any edge cases. Calling validation directly here was causing
-    // the validation to fire too frequently.
+    // Handle inventory close - catch cursor items that return to inventory
+    @EventHandler
+    public void inventoryClose(org.bukkit.event.inventory.InventoryCloseEvent e) {
+        PotionArmorPlugin.plugin.logger.info("inventoryClose called");
+        if (!(e.getPlayer() instanceof Player)) return;
+        final Player p = (Player) e.getPlayer();
+
+        // Schedule reset to catch any cursor items that returned to inventory
+        org.bukkit.Bukkit.getScheduler()
+                .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
+    }
 
     // Handle dispenser equipping armor on players
     @EventHandler
@@ -454,5 +471,16 @@ public class EventListener implements Listener {
                             }
                         },
                         1L);
+    }
+
+    // Handle block picker (middle-click in creative mode)
+    @EventHandler
+    public void blockPick(io.papermc.paper.event.player.PlayerPickItemEvent e) {
+        PotionArmorPlugin.plugin.logger.info("blockPick called");
+        final Player p = e.getPlayer();
+
+        // The pick item event swaps items between slots, schedule a reset
+        org.bukkit.Bukkit.getScheduler()
+                .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
     }
 }

@@ -399,9 +399,7 @@ public class EffectManager {
         List<String> lore = getLore(item);
         if (item == null || item.getType() == Material.AIR || lore == null || player == null)
             return;
-        String key = loreKey(lore);
-        List<String> cachedLines = loreCache.get(key);
-        if (cachedLines == null) return;
+        List<String> cachedLines = getCached(lore);
         removeEffects(player, cachedLines, item);
 
         // Re-apply ALL effect types from remaining equipment
