@@ -17,6 +17,8 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
+import org.bukkit.event.player.PlayerItemBreakEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -248,15 +250,24 @@ public class EventListener implements Listener {
         mgr.resetPlayerEffects(e.getPlayer());
     }
 
-    // TODO: check /hat command
-    // this is stupid because essentials does not throw any events for this action
-    // and there's no way to listen for programatic changes to inventory
-    // so its a kludge...
+    // Handle commands that modify inventory (/hat, /give, /clear)
+    // This is needed because these commands don't fire inventory events
     @EventHandler
-    public void hatPostCheck(PlayerCommandPreprocessEvent e) {
-        PotionArmorPlugin.plugin.logger.info("hatPostCheck called");
-        if (e.getMessage().contains("/hat") && e.getPlayer().hasPermission("essentials.hat")) {
-            mgr.hatCommand(e.getPlayer());
+    public void commandPreprocess(PlayerCommandPreprocessEvent e) {
+        PotionArmorPlugin.plugin.logger.info("commandPreprocess called");
+        final Player p = e.getPlayer();
+        String cmd = e.getMessage().toLowerCase();
+
+        // Handle /hat command (Essentials)
+        if (cmd.contains("/hat") && p.hasPermission("essentials.hat")) {
+            mgr.hatCommand(p);
+            return;
+        }
+
+        // Handle /give and /clear - schedule reset after command executes
+        if (cmd.startsWith("/give ") || cmd.startsWith("/clear ") || cmd.startsWith("/item ")) {
+            org.bukkit.Bukkit.getScheduler()
+                    .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 2L);
         }
     }
 
@@ -480,6 +491,71 @@ public class EventListener implements Listener {
         final Player p = e.getPlayer();
 
         // The pick item event swaps items between slots, schedule a reset
+        org.bukkit.Bukkit.getScheduler()
+                .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
+    }
+
+    // Handle item breaking from durability loss
+    @EventHandler
+    public void itemBreak(PlayerItemBreakEvent e) {
+        PotionArmorPlugin.plugin.logger.info("itemBreak called");
+        final Player p = e.getPlayer();
+        final ItemStack brokenItem = e.getBrokenItem();
+
+        // Remove effects from the broken item
+        mgr.removeEquipment(p, brokenItem);
+    }
+
+    // Handle item consumption (eating food, drinking potions)
+    @EventHandler
+    public void itemConsume(PlayerItemConsumeEvent e) {
+        PotionArmorPlugin.plugin.logger.info("itemConsume called");
+        final Player p = e.getPlayer();
+        final ItemStack consumedItem = e.getItem();
+        final EquipmentSlot hand = e.getHand();
+
+        // Schedule removal after consumption completes
+        org.bukkit.Bukkit.getScheduler()
+                .runTaskLater(
+                        PotionArmorPlugin.plugin,
+                        () -> {
+                            // Check if item was fully consumed (stack size reduced or gone)
+                            ItemStack currentItem =
+                                    (hand == EquipmentSlot.HAND)
+                                            ? p.getInventory().getItemInMainHand()
+                                            : p.getInventory().getItemInOffHand();
+
+                            if (currentItem == null
+                                    || currentItem.getType() == org.bukkit.Material.AIR
+                                    || !currentItem.isSimilar(consumedItem)) {
+                                mgr.removeEquipment(p, consumedItem);
+                            }
+                        },
+                        1L);
+    }
+
+    // Handle projectile launch (ender pearl, snowball, egg, potions, trident)
+    @EventHandler
+    public void projectileLaunch(org.bukkit.event.entity.ProjectileLaunchEvent e) {
+        if (!(e.getEntity().getShooter() instanceof Player)) return;
+
+        PotionArmorPlugin.plugin.logger.info("projectileLaunch called");
+        final Player p = (Player) e.getEntity().getShooter();
+
+        // Schedule a reset to catch any consumed throwables
+        org.bukkit.Bukkit.getScheduler()
+                .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
+    }
+
+    // Handle creative mode inventory changes
+    @EventHandler
+    public void creativeInventory(org.bukkit.event.inventory.InventoryCreativeEvent e) {
+        if (!(e.getWhoClicked() instanceof Player)) return;
+
+        PotionArmorPlugin.plugin.logger.info("creativeInventory called");
+        final Player p = (Player) e.getWhoClicked();
+
+        // Creative inventory changes can affect equipment slots
         org.bukkit.Bukkit.getScheduler()
                 .runTaskLater(PotionArmorPlugin.plugin, () -> mgr.resetPlayerEffects(p), 1L);
     }
