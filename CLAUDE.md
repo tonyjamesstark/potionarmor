@@ -130,3 +130,7 @@ make test
 ```
 
 Test server location is configured in Makefile as `SRV_LOC=../../_test_server/srv`.
+
+## Coding Preferences
+
+- **Avoid recursion**: Prefer iterative approaches with explicit stacks/queues when traversing nested structures

@@ -1,7 +1,9 @@
 /* (C)2025 */
 package me.tWizT3d_dreaMr.PotionArmour.Effects;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,22 +84,46 @@ public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cl
     }
 
     // populate effectTable from config file
+    // Supports nested sections for organization (e.g., Effects.weapons.sword1)
     public static Map<String, List<EquipmentEffect>> effectsFromConfig(
             FileConfiguration file, Logger logger) {
         Map<String, List<EquipmentEffect>> effectsTable =
                 new HashMap<String, List<EquipmentEffect>>();
-        Map<String, Object> entries =
-                file.getConfigurationSection("Effects").getValues(false); // boolean deep
-        for (String item_id : entries.keySet()) {
-            ConfigurationSection entry = ((ConfigurationSection) entries.get(item_id));
-            String loreline = entry.getString("loreline");
-            List<EquipmentEffect> effects = EquipmentEffect.parseEffectList(entry, logger);
-            if (effectsTable.containsKey(loreline)) {
-                effectsTable.get(loreline).addAll(effects);
-            } else {
-                effectsTable.put(loreline, effects);
+        ConfigurationSection effectsSection = file.getConfigurationSection("Effects");
+        if (effectsSection == null) {
+            return effectsTable;
+        }
+
+        // Use a stack for iterative traversal (avoid recursion)
+        Deque<ConfigurationSection> stack = new ArrayDeque<>();
+        stack.push(effectsSection);
+
+        while (!stack.isEmpty()) {
+            ConfigurationSection current = stack.pop();
+
+            for (String key : current.getKeys(false)) {
+                ConfigurationSection entry = current.getConfigurationSection(key);
+                if (entry == null) {
+                    continue;
+                }
+
+                // Check if this is an item (has loreline) or a section (contains sub-items)
+                if (entry.contains("loreline")) {
+                    // This is an item definition - process it
+                    String loreline = entry.getString("loreline");
+                    List<EquipmentEffect> effects = EquipmentEffect.parseEffectList(entry, logger);
+                    if (effectsTable.containsKey(loreline)) {
+                        effectsTable.get(loreline).addAll(effects);
+                    } else {
+                        effectsTable.put(loreline, effects);
+                    }
+                } else {
+                    // This is a section - add to stack for processing
+                    stack.push(entry);
+                }
             }
         }
+
         return effectsTable;
     }
 

@@ -9,3 +9,6 @@ target
 .sdkmanrc
 todo.txt
 .gitattributes
+*.csv
+*.xlsx
+config_conversion

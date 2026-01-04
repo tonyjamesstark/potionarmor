@@ -148,44 +148,45 @@
 
 ---
 
-## MISSING EVENT COVERAGE (Needs Implementation)
+## EXTENDED EVENT COVERAGE (Implemented in v3.3.1)
 
-### Item Destruction/Consumption (HIGH PRIORITY)
-| # | Scenario | Expected | Currently | Event Needed |
-|---|----------|----------|-----------|--------------|
-| 57 | Tool breaks from durability | CE deactivates | NOT HANDLED | PlayerItemBreakEvent |
-| 58 | Armor breaks from durability | CE deactivates | NOT HANDLED | PlayerItemBreakEvent |
-| 59 | Eat food in hand | CE deactivates | NOT HANDLED | PlayerItemConsumeEvent |
-| 60 | Drink potion in hand | CE deactivates | NOT HANDLED | PlayerItemConsumeEvent |
-| 61 | Use milk bucket | CE deactivates | NOT HANDLED | PlayerItemConsumeEvent |
+### Item Destruction/Consumption
+| # | Scenario | Expected | Handler | Status |
+|---|----------|----------|---------|--------|
+| 57 | Tool breaks from durability | CE deactivates | itemBreak() | [IMPLEMENTED] |
+| 58 | Armor breaks from durability | CE deactivates | itemBreak() | [IMPLEMENTED] |
+| 59 | Eat food in hand | CE deactivates | itemConsume() | [IMPLEMENTED] |
+| 60 | Drink potion in hand | CE deactivates | itemConsume() | [IMPLEMENTED] |
+| 61 | Use milk bucket | CE deactivates | itemConsume() | [IMPLEMENTED] |
 
-### Throwables (MEDIUM PRIORITY)
-| # | Scenario | Expected | Currently | Event Needed |
-|---|----------|----------|-----------|--------------|
-| 62 | Throw ender pearl | CE deactivates | NOT HANDLED | ProjectileLaunchEvent |
-| 63 | Throw snowball | CE deactivates | NOT HANDLED | ProjectileLaunchEvent |
-| 64 | Throw egg | CE deactivates | NOT HANDLED | ProjectileLaunchEvent |
-| 65 | Throw splash potion | CE deactivates | NOT HANDLED | ProjectileLaunchEvent |
-| 66 | Throw lingering potion | CE deactivates | NOT HANDLED | ProjectileLaunchEvent |
-| 67 | Throw trident (no Loyalty) | CE deactivates | NOT HANDLED | ProjectileLaunchEvent |
+### Throwables
+| # | Scenario | Expected | Handler | Status |
+|---|----------|----------|---------|--------|
+| 62 | Throw ender pearl | CE deactivates | projectileLaunch() | [IMPLEMENTED] |
+| 63 | Throw snowball | CE deactivates | projectileLaunch() | [IMPLEMENTED] |
+| 64 | Throw egg | CE deactivates | projectileLaunch() | [IMPLEMENTED] |
+| 65 | Throw splash potion | CE deactivates | projectileLaunch() | [IMPLEMENTED] |
+| 66 | Throw lingering potion | CE deactivates | projectileLaunch() | [IMPLEMENTED] |
+| 67 | Throw trident (no Loyalty) | CE deactivates | projectileLaunch() | [IMPLEMENTED] |
 
-### Commands (LOW PRIORITY - Validation task catches)
-| # | Scenario | Expected | Currently | Event Needed |
-|---|----------|----------|-----------|--------------|
-| 68 | /give item to hand | CE activates | Delayed via validation | PlayerCommandPreprocessEvent |
-| 69 | /clear removes item | CE deactivates | Delayed via validation | PlayerCommandPreprocessEvent |
+### Commands
+| # | Scenario | Expected | Handler | Status |
+|---|----------|----------|---------|--------|
+| 68 | /give item to hand | CE activates | commandPreprocess() | [IMPLEMENTED] |
+| 69 | /clear removes item | CE deactivates | commandPreprocess() | [IMPLEMENTED] |
+| 69b | /item command | CE updates | commandPreprocess() | [IMPLEMENTED] |
 
-### Creative Mode (LOW PRIORITY)
-| # | Scenario | Expected | Currently | Event Needed |
-|---|----------|----------|-----------|--------------|
-| 70 | Ctrl+middle-click clone | CE activates | NOT HANDLED | CreativeInventoryEvent? |
-| 71 | Creative inventory pick | CE activates | NOT HANDLED | InventoryCreativeEvent |
+### Creative Mode
+| # | Scenario | Expected | Handler | Status |
+|---|----------|----------|---------|--------|
+| 70 | Ctrl+middle-click clone | CE activates | creativeInventory() | [IMPLEMENTED] |
+| 71 | Creative inventory pick | CE activates | creativeInventory() | [IMPLEMENTED] |
 
-### Crafting/Container Output (LOW PRIORITY)
-| # | Scenario | Expected | Currently | Event Needed |
-|---|----------|----------|-----------|--------------|
-| 72 | Take crafting output to full inv | CE activates if to hand | Partial | InventoryClickEvent |
-| 73 | Take anvil output | CE activates if to hand | Partial | InventoryClickEvent |
+### Crafting/Container Output
+| # | Scenario | Expected | Handler | Status |
+|---|----------|----------|---------|--------|
+| 72 | Take crafting output to full inv | CE activates if to hand | invClick() | [OK] |
+| 73 | Take anvil output | CE activates if to hand | invClick() | [OK] |
 
 ---
 
@@ -224,10 +225,10 @@ If short on time, test these critical paths:
 5. [ ] Test #22: Hotbar scroll away (regression check)
 
 ## Full Test Checklist
-- [ ] Tests 1-11: Priority fixes
+- [ ] Tests 1-11: Priority fixes (v3.3.1)
 - [ ] Tests 12-41: Original spreadsheet regression
-- [ ] Tests 42-56: Additional scenarios in code
-- [ ] Tests 57-73: After implementing missing events
+- [ ] Tests 42-56: Additional scenarios (player lifecycle, entity interactions)
+- [ ] Tests 57-73: Extended event coverage (v3.3.1)
 
 ---
 
@@ -253,8 +254,8 @@ If short on time, test these critical paths:
 | PlayerQuitEvent | playerQuit() | ✓ Implemented |
 | PlayerChangedWorldEvent | changeWorld() | ✓ Implemented |
 | PlayerGameModeChangeEvent | gamemode() | ✓ Implemented |
-| PlayerCommandPreprocessEvent | hatPostCheck() | ✓ Partial (/hat only) |
-| PlayerItemBreakEvent | - | ❌ NOT IMPLEMENTED |
-| PlayerItemConsumeEvent | - | ❌ NOT IMPLEMENTED |
-| ProjectileLaunchEvent | - | ❌ NOT IMPLEMENTED |
-| InventoryCreativeEvent | - | ❌ NOT IMPLEMENTED |
+| PlayerCommandPreprocessEvent | commandPreprocess() | ✓ Implemented (/hat, /give, /clear, /item) |
+| PlayerItemBreakEvent | itemBreak() | ✓ Implemented |
+| PlayerItemConsumeEvent | itemConsume() | ✓ Implemented |
+| ProjectileLaunchEvent | projectileLaunch() | ✓ Implemented |
+| InventoryCreativeEvent | creativeInventory() | ✓ Implemented |

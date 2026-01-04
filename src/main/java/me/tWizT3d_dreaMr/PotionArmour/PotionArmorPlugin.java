@@ -28,9 +28,8 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
     public static PotionArmorPlugin plugin;
     public FileConfiguration config;
     public FileConfiguration lang;
-    // public static List<FileConfiguration> moreEffectsConfig; to add for
-    // 'effects/' dir
     private File config_dir;
+    private File effects_dir;
     public EventListener listener;
     public EffectManager manager;
 
@@ -46,6 +45,10 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         plugin = this;
         EffectManager.setSupportedEffects();
         this.config_dir = getDataFolder();
+        this.effects_dir = new File(config_dir, "effects");
+        if (!effects_dir.exists()) {
+            effects_dir.mkdir();
+        }
         reloadConfigs(false);
 
         this.manager = new EffectManager(this);
@@ -56,8 +59,11 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         Runnable job =
                 () -> {
                     int loaded = manager.loadEffects(config);
+
+                    // Load effects from additional files in effects/ directory
+                    loaded += loadAdditionalEffects();
+
                     logger.info(loaded + " effects loaded");
-                    // manager.loadEffects(moreEffectsConfig); to add for 'effects/' dir
 
                     // Start the periodic validation task
                     startValidationTask();
@@ -276,12 +282,47 @@ public class PotionArmorPlugin extends org.bukkit.plugin.java.JavaPlugin {
         if (isSetup) {
             this.manager.resetLoreCache();
             int loadedEffects = this.manager.loadEffects(this.config);
+            loadedEffects += loadAdditionalEffects();
             logger.log(Level.INFO, "Loaded " + loadedEffects + " effects.");
         }
 
         sender.sendMessage(
                 ChatColor.GREEN + "[potionarmor] " + this.lang.getString("config_reload"));
         return true;
+    }
+
+    /**
+     * Load effects from additional .yml files in the effects/ directory.
+     *
+     * @return the total number of effects loaded from additional files
+     */
+    private int loadAdditionalEffects() {
+        int totalLoaded = 0;
+
+        if (!effects_dir.exists() || !effects_dir.isDirectory()) {
+            return 0;
+        }
+
+        File[] files = effects_dir.listFiles((dir, name) -> name.endsWith(".yml"));
+        if (files == null) {
+            return 0;
+        }
+
+        for (File file : files) {
+            try {
+                FileConfiguration effectConfig = YamlConfiguration.loadConfiguration(file);
+                if (effectConfig.contains("Effects")) {
+                    int loaded = manager.loadEffects(effectConfig);
+                    logger.info("Loaded " + loaded + " effects from " + file.getName());
+                    totalLoaded += loaded;
+                }
+            } catch (Exception e) {
+                logger.warning(
+                        "Failed to load effects from " + file.getName() + ": " + e.getMessage());
+            }
+        }
+
+        return totalLoaded;
     }
 
     public boolean resetPlayer(CommandSender sender, String[] args) {
