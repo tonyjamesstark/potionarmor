@@ -134,3 +134,7 @@ Test server location is configured in Makefile as `SRV_LOC=../../_test_server/sr
 ## Coding Preferences
 
 - **Avoid recursion**: Prefer iterative approaches with explicit stacks/queues when traversing nested structures
+
+## Version Management
+
+- **Always tag version bumps**: When bumping the version in pom.xml, create a git tag matching the version (e.g., `git tag v3.4.0`)

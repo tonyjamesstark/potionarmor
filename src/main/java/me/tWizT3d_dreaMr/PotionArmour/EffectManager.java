@@ -226,17 +226,31 @@ public class EffectManager {
     }
 
     /**
+     * Container for potion effect level and the slot it comes from.
+     */
+    private static class PotionLevelInfo {
+        final int level;
+        final EquipmentSlot slot;
+
+        PotionLevelInfo(int level, EquipmentSlot slot) {
+            this.level = level;
+            this.slot = slot;
+        }
+    }
+
+    /**
      * Find the highest level of a potion effect type that remains on equipped items
      * (excluding the item being removed).
      *
      * @param player The player
      * @param potionTypeKey The potion type key (e.g., "minecraft:speed")
      * @param excludingItem The item being removed (to exclude from check)
-     * @return The highest remaining level (-1 if none found)
+     * @return PotionLevelInfo with level and slot, or null if none found
      */
-    private int getHighestRemainingLevel(
+    private PotionLevelInfo getHighestRemainingLevel(
             Player player, String potionTypeKey, ItemStack excludingItem) {
         int highestLevel = -1;
+        EquipmentSlot highestSlot = null;
         List<ItemStack> equipped = getEquippedItems(player);
 
         for (int idx = 0; idx < equipped.size(); idx++) {
@@ -260,27 +274,32 @@ public class EffectManager {
 
                     PotionEffect pe = (PotionEffect) eff;
                     if (pe.getPotionTypeKey().equals(potionTypeKey)) {
-                        highestLevel = Math.max(highestLevel, pe.getLevel());
+                        if (pe.getLevel() > highestLevel) {
+                            highestLevel = pe.getLevel();
+                            highestSlot = slot;
+                        }
                     }
                 }
             }
         }
-        return highestLevel;
+        return highestLevel >= 0 ? new PotionLevelInfo(highestLevel, highestSlot) : null;
     }
 
     /**
-     * Apply a potion effect at a specific level.
+     * Apply a potion effect at a specific level from a specific slot.
      *
      * @param player The player to apply the effect to
      * @param baseEffect The base potion effect (for slot and type information)
      * @param level The level to apply
+     * @param slot The equipment slot this effect comes from
      */
-    private void applyPotionEffectAtLevel(Player player, PotionEffect baseEffect, int level) {
+    private void applyPotionEffectAtLevel(
+            Player player, PotionEffect baseEffect, int level, EquipmentSlot slot) {
         NamespacedKey key = NamespacedKey.fromString(baseEffect.getPotionTypeKey());
         PotionEffectType effectType = Registry.EFFECT.get(key);
         PotionEffect lowerEffect = new PotionEffect(baseEffect.slot, effectType, level);
         lowerEffect.applyTo(player);
-        tracker.trackEffect(player, lowerEffect);
+        tracker.trackEffect(player, lowerEffect, slot);
     }
 
     /**
@@ -289,29 +308,37 @@ public class EffectManager {
      * @param player The player
      * @param effect The effect being removed
      * @param removedItem The item being removed (excluded from overlap check)
-     * @return true if effect was handled (removed or downgraded), false if should fall through
+     * @param sameEffectOnOtherSlot Whether this exact effect exists on another slot
+     * @return true if effect was handled (don't remove visual), false if should remove visual
      */
     private boolean handlePotionEffectRemoval(
-            Player player, PotionEffect effect, ItemStack removedItem) {
-        int highestRemaining =
-                getHighestRemainingLevel(player, effect.getPotionTypeKey(), removedItem);
+            Player player,
+            PotionEffect effect,
+            ItemStack removedItem,
+            boolean sameEffectOnOtherSlot) {
 
-        if (highestRemaining >= effect.getLevel()) {
-            // Higher/equal level remains - just untrack
-            tracker.untrackEffect(player, effect);
-            return true;
-        } else if (highestRemaining > 0) {
-            // Lower level remains - remove current and re-apply lower
-            effect.removeFrom(player);
-            tracker.untrackEffect(player, effect);
-            applyPotionEffectAtLevel(player, effect, highestRemaining);
+        // If the exact same effect (same level) is on another slot, don't remove
+        if (sameEffectOnOtherSlot) {
             return true;
         }
 
-        return false; // No overlap, fall through to normal removal
+        // Check if a different level of this potion type exists on other equipment
+        PotionLevelInfo remaining =
+                getHighestRemainingLevel(player, effect.getPotionTypeKey(), removedItem);
+
+        if (remaining != null) {
+            // A different level remains - remove current and re-apply the highest remaining
+            effect.removeFrom(player);
+            // Re-apply immediately with slot info - no delay needed!
+            applyPotionEffectAtLevel(player, effect, remaining.level, remaining.slot);
+            return true;
+        }
+
+        return false; // No overlap, remove the visual effect
     }
 
-    private void removeEffects(Player player, List<String> lines, ItemStack removedItem) {
+    private void removeEffects(
+            Player player, List<String> lines, ItemStack removedItem, EquipmentSlot slot) {
         for (String loreLine : lines) {
             for (EquipmentEffect eff : effectsTable.get(loreLine)) {
                 // Only remove if we tracked this effect
@@ -319,16 +346,31 @@ public class EffectManager {
                     continue;
                 }
 
-                // For potion effects, handle level overlapping
+                String effectId = PlayerEffectTracker.getEffectId(eff);
+
+                // Untrack from this slot
+                tracker.untrackEffect(player, eff, slot);
+
+                // Check if this effect exists on another slot
+                boolean onOtherSlot = tracker.isEffectOnOtherSlot(player, effectId, slot);
+
                 if (eff instanceof PotionEffect) {
-                    if (handlePotionEffectRemoval(player, (PotionEffect) eff, removedItem)) {
+                    // For potion effects, removeFrom() removes ALL levels of this type
+                    // So we need to check if another slot has ANY level and re-apply it
+                    if (handlePotionEffectRemoval(
+                            player, (PotionEffect) eff, removedItem, onOtherSlot)) {
+                        continue;
+                    }
+                } else {
+                    // For trail/disguise effects, only call removeFrom if not on another slot
+                    if (onOtherSlot) {
+                        // Effect still exists on another slot - don't remove visual
                         continue;
                     }
                 }
 
-                // Remove effect and untrack it
+                // Remove the visual effect
                 eff.removeFrom(player);
-                tracker.untrackEffect(player, eff);
             }
         }
     }
@@ -364,9 +406,9 @@ public class EffectManager {
                     continue;
                 }
 
-                // Apply effect and track it
+                // Apply effect and track it with slot information
                 eff.applyTo(player);
-                tracker.trackEffect(player, eff);
+                tracker.trackEffect(player, eff, slot);
             }
         }
     }
@@ -398,56 +440,47 @@ public class EffectManager {
      *
      * @param player The player unequipping the item
      * @param item The item being unequipped
+     * @param slot The slot the item was removed from
+     */
+    public void removeEquipment(Player player, ItemStack item, EquipmentSlot slot) {
+        List<String> lore = getLore(item);
+        if (item == null || item.getType() == Material.AIR || lore == null || player == null)
+            return;
+        List<String> cachedLines = getCached(lore);
+        removeEffects(player, cachedLines, item, slot);
+        // No need to reapply! Slot-aware tracking handles overlapping effects automatically
+    }
+
+    /**
+     * Remove effects from an unequipped item when slot is unknown.
+     * This searches through all equipped slots to find and remove the effects.
+     * Used by events like drop where we don't know which slot the item came from.
+     *
+     * @param player The player unequipping the item
+     * @param item The item being unequipped
      */
     public void removeEquipment(Player player, ItemStack item) {
         List<String> lore = getLore(item);
         if (item == null || item.getType() == Material.AIR || lore == null || player == null)
             return;
-        List<String> cachedLines = getCached(lore);
-        removeEffects(player, cachedLines, item);
 
-        // Re-apply ALL effect types from remaining equipment
-        // This fixes the issue where trails and disguises were not being re-applied
-        // when removing one piece of equipment that shared effects with another
-        // Pass the removed item to exclude it (important for events that fire before inventory
-        // updates)
-        reapplyEffectsFromEquipment(player, item);
-    }
-
-    /**
-     * Re-apply all effects from currently equipped items.
-     * This is called after removing equipment to ensure overlapping effects are restored.
-     * The tracker prevents duplicate applications.
-     *
-     * @param player The player
-     * @param excludeItem Item to exclude (the one being removed, may still be in inventory during event)
-     */
-    private void reapplyEffectsFromEquipment(Player player, ItemStack excludeItem) {
+        // Search through all slots to remove this item's effects
         List<ItemStack> equipped = getEquippedItems(player);
-
         for (int idx = 0; idx < equipped.size(); idx++) {
-            ItemStack currentItem = equipped.get(idx);
-            if (currentItem == null || currentItem.getType() == Material.AIR) continue;
-            // Skip the item being removed (it may still be in the slot during event processing)
-            if (excludeItem != null && currentItem.isSimilar(excludeItem)) continue;
-
-            List<String> _lore = getLore(currentItem);
-            if (_lore == null) continue;
-
-            EquipmentSlot slot = slots[idx];
-
-            for (String loreline : getCached(_lore)) {
-                for (EquipmentEffect eff : effectsTable.get(loreline)) {
-                    if (!eff.slot.test(slot)) continue;
-                    if (!isEnabled.get(EquipmentEffect.getType(eff))) continue;
-
-                    // Always apply - Bukkit's addPotionEffect() handles duplicates
-                    // correctly (keeps higher/longer effects). trackEffect() uses
-                    // a Set so duplicate tracking calls are safe.
-                    eff.applyTo(player);
-                    tracker.trackEffect(player, eff);
-                }
+            ItemStack slotItem = equipped.get(idx);
+            if (slotItem != null && slotItem.isSimilar(item)) {
+                // Found the slot - remove effects from it
+                List<String> cachedLines = getCached(lore);
+                removeEffects(player, cachedLines, item, slots[idx]);
+                return;
             }
+        }
+
+        // Item not found in any slot - it may have already been removed
+        // In this case, remove from all slots (defensive)
+        for (EquipmentSlot slot : slots) {
+            List<String> cachedLines = getCached(lore);
+            removeEffects(player, cachedLines, item, slot);
         }
     }
 
@@ -490,7 +523,7 @@ public class EffectManager {
     public void replaceEquipment(
             Player player, ItemStack _new, ItemStack _old, EquipmentSlot slot) {
         if (_old != null) {
-            removeEquipment(player, _old);
+            removeEquipment(player, _old, slot);
         }
         if (_new != null) {
             addEquipment(player, _new, slot);
@@ -636,8 +669,8 @@ public class EffectManager {
                             ItemStack newHat = player.getInventory().getHelmet();
                             ItemStack newMain = player.getInventory().getItemInMainHand();
                             if (!(newHat.isSimilar(oldHat) && newMain.isSimilar(oldMain))) {
-                                removeEquipment(player, oldHat);
-                                removeEquipment(player, oldMain);
+                                removeEquipment(player, oldHat, EquipmentSlot.HEAD);
+                                removeEquipment(player, oldMain, EquipmentSlot.HAND);
                                 addEquipment(player, newHat, EquipmentSlot.HEAD);
                                 addEquipment(player, newMain, EquipmentSlot.HAND);
                             }

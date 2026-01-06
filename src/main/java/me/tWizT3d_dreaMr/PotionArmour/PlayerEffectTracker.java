@@ -12,15 +12,20 @@ import me.tWizT3d_dreaMr.PotionArmour.Effects.EquipmentEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.PotionEffect;
 import me.tWizT3d_dreaMr.PotionArmour.Effects.TrailEffect;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlot;
 
 /**
  * Tracks which effects have been applied to each player by this plugin.
+ * Uses slot-aware tracking to know which equipment slot provides which effects.
  * This allows us to only remove effects that WE applied, leaving effects
  * from other sources (drunk potions, manually added trails, etc.) untouched.
  */
 public class PlayerEffectTracker {
 
-    // Player UUID -> Set of effect identifiers that this plugin has applied
+    // Player UUID -> Equipment Slot -> Set of effect identifiers from that slot
+    private final Map<UUID, Map<EquipmentSlot, Set<String>>> slotEffects = new HashMap<>();
+
+    // Player UUID -> Set of effect identifiers that this plugin has applied (all slots combined)
     private final Map<UUID, Set<String>> activeEffects = new HashMap<>();
 
     // Player UUID -> Set of potion effect type keys (e.g., "minecraft:regeneration")
@@ -61,11 +66,17 @@ public class PlayerEffectTracker {
     }
 
     /**
-     * Record that an effect has been applied to a player by this plugin.
+     * Record that an effect has been applied to a player by this plugin from a specific slot.
      */
-    public void trackEffect(Player player, EquipmentEffect effect) {
+    public void trackEffect(Player player, EquipmentEffect effect, EquipmentSlot slot) {
         UUID uuid = player.getUniqueId();
         String effectId = getEffectId(effect);
+
+        // Add to slot-specific tracking
+        slotEffects
+                .computeIfAbsent(uuid, k -> new HashMap<>())
+                .computeIfAbsent(slot, k -> Collections.synchronizedSet(new HashSet<>()))
+                .add(effectId);
 
         // Add to general tracking set
         activeEffects
@@ -88,32 +99,46 @@ public class PlayerEffectTracker {
     }
 
     /**
-     * Record that an effect has been removed from a player.
+     * Record that an effect has been removed from a player from a specific slot.
      */
-    public void untrackEffect(Player player, EquipmentEffect effect) {
+    public void untrackEffect(Player player, EquipmentEffect effect, EquipmentSlot slot) {
         UUID uuid = player.getUniqueId();
         String effectId = getEffectId(effect);
 
-        // Remove from general tracking
-        Set<String> effects = activeEffects.get(uuid);
-        if (effects != null) {
-            effects.remove(effectId);
+        // Remove from slot-specific tracking
+        Map<EquipmentSlot, Set<String>> playerSlots = slotEffects.get(uuid);
+        if (playerSlots != null) {
+            Set<String> slotSet = playerSlots.get(slot);
+            if (slotSet != null) {
+                slotSet.remove(effectId);
+                if (slotSet.isEmpty()) {
+                    playerSlots.remove(slot);
+                }
+            }
         }
 
-        // Type-specific untracking
-        if (effect instanceof PotionEffect) {
-            PotionEffect pe = (PotionEffect) effect;
-            Set<String> potions = activePotionTypes.get(uuid);
-            if (potions != null) {
-                potions.remove(getPotionTypeKey(pe));
+        // Only remove from general tracking if not present on any other slot
+        if (!isEffectOnAnySlot(player, effectId)) {
+            Set<String> effects = activeEffects.get(uuid);
+            if (effects != null) {
+                effects.remove(effectId);
             }
-        } else if (effect instanceof TrailEffect) {
-            Set<String> trails = activeTrails.get(uuid);
-            if (trails != null) {
-                trails.remove(effectId);
+
+            // Type-specific untracking
+            if (effect instanceof PotionEffect) {
+                PotionEffect pe = (PotionEffect) effect;
+                Set<String> potions = activePotionTypes.get(uuid);
+                if (potions != null) {
+                    potions.remove(getPotionTypeKey(pe));
+                }
+            } else if (effect instanceof TrailEffect) {
+                Set<String> trails = activeTrails.get(uuid);
+                if (trails != null) {
+                    trails.remove(effectId);
+                }
+            } else if (effect instanceof DisguiseEffect) {
+                activeDisguise.remove(uuid);
             }
-        } else if (effect instanceof DisguiseEffect) {
-            activeDisguise.remove(uuid);
         }
     }
 
@@ -168,10 +193,44 @@ public class PlayerEffectTracker {
     }
 
     /**
+     * Check if an effect is present on any slot for a player.
+     */
+    private boolean isEffectOnAnySlot(Player player, String effectId) {
+        Map<EquipmentSlot, Set<String>> playerSlots = slotEffects.get(player.getUniqueId());
+        if (playerSlots == null) return false;
+
+        for (Set<String> slotSet : playerSlots.values()) {
+            if (slotSet.contains(effectId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if an effect is present on any slot OTHER than the specified slot.
+     * This is used to determine if removing an effect from one slot should
+     * actually remove the visual effect (it shouldn't if another slot has it).
+     */
+    public boolean isEffectOnOtherSlot(Player player, String effectId, EquipmentSlot excludeSlot) {
+        Map<EquipmentSlot, Set<String>> playerSlots = slotEffects.get(player.getUniqueId());
+        if (playerSlots == null) return false;
+
+        for (Map.Entry<EquipmentSlot, Set<String>> entry : playerSlots.entrySet()) {
+            if (entry.getKey() == excludeSlot) continue;
+            if (entry.getValue().contains(effectId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Clear all tracking for a player (used on quit/death).
      */
     public void clearPlayer(Player player) {
         UUID uuid = player.getUniqueId();
+        slotEffects.remove(uuid);
         activeEffects.remove(uuid);
         activePotionTypes.remove(uuid);
         activeTrails.remove(uuid);
@@ -185,10 +244,16 @@ public class PlayerEffectTracker {
         UUID uuid = player.getUniqueId();
         Set<String> potions = activePotionTypes.get(uuid);
         if (potions != null) {
-            // Remove potion entries from general tracking too
+            // Remove potion entries from general tracking and slot tracking
             Set<String> effects = activeEffects.get(uuid);
             if (effects != null) {
                 effects.removeIf(e -> e.startsWith("POTION:"));
+            }
+            Map<EquipmentSlot, Set<String>> playerSlots = slotEffects.get(uuid);
+            if (playerSlots != null) {
+                for (Set<String> slotSet : playerSlots.values()) {
+                    slotSet.removeIf(e -> e.startsWith("POTION:"));
+                }
             }
             potions.clear();
         }
@@ -205,6 +270,12 @@ public class PlayerEffectTracker {
             if (effects != null) {
                 effects.removeIf(e -> e.startsWith("TRAIL:"));
             }
+            Map<EquipmentSlot, Set<String>> playerSlots = slotEffects.get(uuid);
+            if (playerSlots != null) {
+                for (Set<String> slotSet : playerSlots.values()) {
+                    slotSet.removeIf(e -> e.startsWith("TRAIL:"));
+                }
+            }
             trails.clear();
         }
     }
@@ -218,6 +289,12 @@ public class PlayerEffectTracker {
         Set<String> effects = activeEffects.get(uuid);
         if (effects != null) {
             effects.removeIf(e -> e.startsWith("DISGUISE:"));
+        }
+        Map<EquipmentSlot, Set<String>> playerSlots = slotEffects.get(uuid);
+        if (playerSlots != null) {
+            for (Set<String> slotSet : playerSlots.values()) {
+                slotSet.removeIf(e -> e.startsWith("DISGUISE:"));
+            }
         }
     }
 
