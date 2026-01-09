@@ -1,9 +1,14 @@
 /* (C)2025 */
 package me.tWizT3d_dreaMr.PotionArmour;
 
+import dev.esophose.playerparticles.api.PlayerParticlesAPI;
+import dev.esophose.playerparticles.particles.ParticlePair;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -36,6 +41,14 @@ public class PlayerEffectTracker {
 
     // Player UUID -> Current disguise identifier (only one disguise at a time)
     private final Map<UUID, String> activeDisguise = new HashMap<>();
+
+    // ===== Trail Snapshot Tracking (for user trail preservation) =====
+
+    // Player UUID -> List of user-configured ParticlePairs before equipment was applied
+    private final Map<UUID, List<ParticlePair>> userTrailSnapshots = new HashMap<>();
+
+    // Player UUID -> Equipment Slot -> Set of equipment trail IDs from that slot
+    private final Map<UUID, Map<EquipmentSlot, Set<Integer>>> equipmentTrailIds = new HashMap<>();
 
     /**
      * Generate a unique identifier for an effect.
@@ -235,6 +248,8 @@ public class PlayerEffectTracker {
         activePotionTypes.remove(uuid);
         activeTrails.remove(uuid);
         activeDisguise.remove(uuid);
+        userTrailSnapshots.remove(uuid);
+        equipmentTrailIds.remove(uuid);
     }
 
     /**
@@ -312,5 +327,145 @@ public class PlayerEffectTracker {
     public int getTrackedEffectCount(Player player) {
         Set<String> effects = activeEffects.get(player.getUniqueId());
         return effects != null ? effects.size() : 0;
+    }
+
+    // ===== Trail Snapshot Methods (for user trail preservation) =====
+
+    /**
+     * Capture a snapshot of the player's current trails before applying equipment trails.
+     * This preserves user-configured trails so they can be restored later.
+     */
+    public void captureUserTrailSnapshot(Player player) {
+        UUID uuid = player.getUniqueId();
+
+        // Don't overwrite an existing snapshot
+        if (userTrailSnapshots.containsKey(uuid)) {
+            return;
+        }
+
+        try {
+            PlayerParticlesAPI api = PlayerParticlesAPI.getInstance();
+            Collection<ParticlePair> currentTrails = api.getActivePlayerParticles(player);
+
+            // Clone the list to avoid reference issues
+            List<ParticlePair> snapshot = new ArrayList<>();
+            for (ParticlePair pair : currentTrails) {
+                snapshot.add(pair.clone());
+            }
+
+            userTrailSnapshots.put(uuid, snapshot);
+        } catch (Exception e) {
+            // PlayerParticles not loaded or error - just don't snapshot
+            PotionArmorPlugin.plugin.logger.warning(
+                    "Failed to capture trail snapshot for "
+                            + player.getName()
+                            + ": "
+                            + e.getMessage());
+        }
+    }
+
+    /**
+     * Restore the player's user-configured trails from the snapshot.
+     * This is called when all equipment trails have been removed.
+     */
+    public void restoreUserTrailSnapshot(Player player) {
+        UUID uuid = player.getUniqueId();
+        List<ParticlePair> snapshot = userTrailSnapshots.remove(uuid);
+
+        if (snapshot == null || snapshot.isEmpty()) {
+            return;
+        }
+
+        try {
+            PlayerParticlesAPI api = PlayerParticlesAPI.getInstance();
+
+            // Re-apply each snapshotted trail
+            for (ParticlePair pair : snapshot) {
+                api.addActivePlayerParticle(player, pair.getEffect(), pair.getStyle());
+            }
+        } catch (Exception e) {
+            PotionArmorPlugin.plugin.logger.warning(
+                    "Failed to restore trail snapshot for "
+                            + player.getName()
+                            + ": "
+                            + e.getMessage());
+        }
+    }
+
+    /**
+     * Track an equipment trail ID for a specific slot.
+     */
+    public void trackEquipmentTrailId(Player player, int trailId, EquipmentSlot slot) {
+        UUID uuid = player.getUniqueId();
+        equipmentTrailIds
+                .computeIfAbsent(uuid, k -> new HashMap<>())
+                .computeIfAbsent(slot, k -> Collections.synchronizedSet(new HashSet<>()))
+                .add(trailId);
+    }
+
+    /**
+     * Untrack an equipment trail ID from a specific slot.
+     */
+    public void untrackEquipmentTrailId(Player player, int trailId, EquipmentSlot slot) {
+        UUID uuid = player.getUniqueId();
+        Map<EquipmentSlot, Set<Integer>> playerTrails = equipmentTrailIds.get(uuid);
+        if (playerTrails != null) {
+            Set<Integer> slotTrails = playerTrails.get(slot);
+            if (slotTrails != null) {
+                slotTrails.remove(trailId);
+                if (slotTrails.isEmpty()) {
+                    playerTrails.remove(slot);
+                }
+            }
+            if (playerTrails.isEmpty()) {
+                equipmentTrailIds.remove(uuid);
+            }
+        }
+    }
+
+    /**
+     * Check if the player has ANY equipment trails active across all slots.
+     */
+    public boolean hasEquipmentTrails(Player player) {
+        Map<EquipmentSlot, Set<Integer>> playerTrails = equipmentTrailIds.get(player.getUniqueId());
+        if (playerTrails == null || playerTrails.isEmpty()) {
+            return false;
+        }
+
+        for (Set<Integer> slotTrails : playerTrails.values()) {
+            if (slotTrails != null && !slotTrails.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get all equipment trail IDs for a specific slot.
+     * Returns an empty set if no trails are tracked for that slot.
+     */
+    public Set<Integer> getEquipmentTrailIds(Player player, EquipmentSlot slot) {
+        UUID uuid = player.getUniqueId();
+        Map<EquipmentSlot, Set<Integer>> playerTrails = equipmentTrailIds.get(uuid);
+        if (playerTrails == null) {
+            return Collections.emptySet();
+        }
+
+        Set<Integer> slotTrails = playerTrails.get(slot);
+        return slotTrails != null ? new HashSet<>(slotTrails) : Collections.emptySet();
+    }
+
+    /**
+     * Clear the user trail snapshot for a player (used on death/quit).
+     */
+    public void clearUserTrailSnapshot(Player player) {
+        userTrailSnapshots.remove(player.getUniqueId());
+    }
+
+    /**
+     * Clear all equipment trail ID tracking for a player.
+     */
+    public void clearEquipmentTrailIds(Player player) {
+        equipmentTrailIds.remove(player.getUniqueId());
     }
 }

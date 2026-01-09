@@ -5,6 +5,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.potion.PotionEffectType;
 
@@ -44,7 +45,7 @@ public class PotionEffect extends EquipmentEffect {
     }
 
     @Override
-    public boolean applyTo(LivingEntity p) {
+    public boolean applyTo(LivingEntity p, EquipmentSlot slot) {
         return p.addPotionEffect(effect);
     }
 
@@ -89,7 +90,7 @@ public class PotionEffect extends EquipmentEffect {
     }
 
     @Override
-    public boolean removeFrom(LivingEntity p) {
+    public boolean removeFrom(LivingEntity p, EquipmentSlot slot) {
         // org.bukkit.potion.PotionEffect active =
         // p.getPotionEffect(this.effect.getType());
         // leave stronger or longer effects alone

@@ -8,6 +8,7 @@ import me.tWizT3d_dreaMr.PotionArmour.PotionArmorPlugin;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.EquipmentSlotGroup;
 
 public class DisguiseEffect extends EquipmentEffect {
@@ -49,7 +50,7 @@ public class DisguiseEffect extends EquipmentEffect {
     }
 
     @Override
-    public boolean applyTo(LivingEntity p) {
+    public boolean applyTo(LivingEntity p, EquipmentSlot slot) {
         DisguiseAPI.disguiseEntity((Entity) p, disguise);
         return true;
     }
@@ -64,7 +65,7 @@ public class DisguiseEffect extends EquipmentEffect {
     }
 
     @Override
-    public boolean removeFrom(LivingEntity p) {
+    public boolean removeFrom(LivingEntity p, EquipmentSlot slot) {
         DisguiseAPI.undisguiseToAll((Entity) p);
         return true;
     }

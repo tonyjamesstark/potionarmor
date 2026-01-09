@@ -4,7 +4,14 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>potionarmor</groupId>
   <artifactId>potionarmor</artifactId>
-  <version>3.4.0</version>
+  <version>3.4.1</version>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
   <repositories>
     <repository>
       <id>papermc</id>

@@ -14,6 +14,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.EquipmentSlotGroup;
 
 public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cloneable {
@@ -22,9 +23,9 @@ public abstract class EquipmentEffect implements Comparable<EquipmentEffect>, Cl
 
     public EquipmentSlotGroup slot = EquipmentSlotGroup.ANY;
 
-    public abstract boolean applyTo(LivingEntity p);
+    public abstract boolean applyTo(LivingEntity p, EquipmentSlot slot);
 
-    public abstract boolean removeFrom(LivingEntity p);
+    public abstract boolean removeFrom(LivingEntity p, EquipmentSlot slot);
 
     public abstract String toString();
 

@@ -298,7 +298,7 @@ public class EffectManager {
         NamespacedKey key = NamespacedKey.fromString(baseEffect.getPotionTypeKey());
         PotionEffectType effectType = Registry.EFFECT.get(key);
         PotionEffect lowerEffect = new PotionEffect(baseEffect.slot, effectType, level);
-        lowerEffect.applyTo(player);
+        lowerEffect.applyTo(player, slot);
         tracker.trackEffect(player, lowerEffect, slot);
     }
 
@@ -315,7 +315,8 @@ public class EffectManager {
             Player player,
             PotionEffect effect,
             ItemStack removedItem,
-            boolean sameEffectOnOtherSlot) {
+            boolean sameEffectOnOtherSlot,
+            EquipmentSlot slot) {
 
         // If the exact same effect (same level) is on another slot, don't remove
         if (sameEffectOnOtherSlot) {
@@ -328,7 +329,7 @@ public class EffectManager {
 
         if (remaining != null) {
             // A different level remains - remove current and re-apply the highest remaining
-            effect.removeFrom(player);
+            effect.removeFrom(player, slot);
             // Re-apply immediately with slot info - no delay needed!
             applyPotionEffectAtLevel(player, effect, remaining.level, remaining.slot);
             return true;
@@ -358,7 +359,7 @@ public class EffectManager {
                     // For potion effects, removeFrom() removes ALL levels of this type
                     // So we need to check if another slot has ANY level and re-apply it
                     if (handlePotionEffectRemoval(
-                            player, (PotionEffect) eff, removedItem, onOtherSlot)) {
+                            player, (PotionEffect) eff, removedItem, onOtherSlot, slot)) {
                         continue;
                     }
                 } else {
@@ -370,7 +371,7 @@ public class EffectManager {
                 }
 
                 // Remove the visual effect
-                eff.removeFrom(player);
+                eff.removeFrom(player, slot);
             }
         }
     }
@@ -407,7 +408,7 @@ public class EffectManager {
                 }
 
                 // Apply effect and track it with slot information
-                eff.applyTo(player);
+                eff.applyTo(player, slot);
                 tracker.trackEffect(player, eff, slot);
             }
         }
