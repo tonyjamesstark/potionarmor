@@ -148,9 +148,9 @@ public class TrailEffect extends EquipmentEffect {
         return "TrailEffect: {"
                 + this.effect.toString()
                 + " "
-                + this.style.toString()
+                + this.style == null ? "" : this.style.toString()
                 + " "
-                + this.data.toString()
+                + this.data == null ? "" : this.data.toString()
                 + "}";
     }
 

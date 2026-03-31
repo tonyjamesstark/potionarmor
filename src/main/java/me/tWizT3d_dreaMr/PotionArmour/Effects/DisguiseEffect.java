@@ -51,6 +51,10 @@ public class DisguiseEffect extends EquipmentEffect {
 
     @Override
     public boolean applyTo(LivingEntity p, EquipmentSlot slot) {
+        if (DisguiseAPI.isDisguised(p)){
+            PotionArmorPlugin.plugin.logger.warning("Attempted to disguise " + p.toString() + " as " + disguise.toString() + " but was already disguised as " + DisguiseAPI.getDisguise(p).toString());
+            return false;
+        }
         DisguiseAPI.disguiseEntity((Entity) p, disguise);
         return true;
     }
