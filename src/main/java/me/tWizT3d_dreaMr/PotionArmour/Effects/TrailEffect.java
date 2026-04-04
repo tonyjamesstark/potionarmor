@@ -145,13 +145,18 @@ public class TrailEffect extends EquipmentEffect {
 
     @Override
     public String toString() {
-        return "TrailEffect: {"
-                + this.effect.toString()
-                + " "
-                + this.style == null ? "" : this.style.toString()
-                + " "
-                + this.data == null ? "" : this.data.toString()
-                + "}";
+        String out = "TrailEffect: {";
+        if (this.effect != null){
+            out += this.effect.toString() + " ";
+        }
+        if (this.style != null){
+            out += this.style.toString() + " ";
+        }
+        if (this.data != null){
+            out += this.data.toString() + " ";
+        }
+        out+= "}";
+        return out;
     }
 
     public static TrailEffect fromConfig(EquipmentSlotGroup slot, ConfigurationSection s) {

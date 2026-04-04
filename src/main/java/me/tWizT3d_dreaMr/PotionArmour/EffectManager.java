@@ -2,6 +2,8 @@
 package me.tWizT3d_dreaMr.PotionArmour;
 
 import dev.esophose.playerparticles.api.PlayerParticlesAPI;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -140,12 +142,12 @@ public class EffectManager {
     }
 
     EquipmentSlot[] slots = {
-        EquipmentSlot.FEET,
-        EquipmentSlot.LEGS,
-        EquipmentSlot.CHEST,
-        EquipmentSlot.HEAD,
-        EquipmentSlot.HAND,
-        EquipmentSlot.OFF_HAND
+            EquipmentSlot.FEET,
+            EquipmentSlot.LEGS,
+            EquipmentSlot.CHEST,
+            EquipmentSlot.HEAD,
+            EquipmentSlot.HAND,
+            EquipmentSlot.OFF_HAND
     };
 
     /**
@@ -214,6 +216,7 @@ public class EffectManager {
 
     /**
      * Get all currently equipped items for a player.
+     * 
      * @param player The player
      * @return List containing armor (boots to helmet), main hand, and off hand items
      */
@@ -255,22 +258,28 @@ public class EffectManager {
 
         for (int idx = 0; idx < equipped.size(); idx++) {
             ItemStack item = equipped.get(idx);
-            if (item == null || item.getType() == Material.AIR) continue;
+            if (item == null || item.getType() == Material.AIR)
+                continue;
 
             // Skip the item being removed
-            if (excludingItem != null && item.isSimilar(excludingItem)) continue;
+            if (excludingItem != null && item.isSimilar(excludingItem))
+                continue;
 
             List<String> lore = getLore(item);
-            if (lore == null) continue;
+            if (lore == null)
+                continue;
 
             EquipmentSlot slot = slots[idx];
 
             for (String loreline : getCached(lore)) {
                 List<EquipmentEffect> effects = effectsTable.get(loreline);
-                if (effects == null) continue;
+                if (effects == null)
+                    continue;
                 for (EquipmentEffect eff : effects) {
-                    if (!eff.slot.test(slot)) continue;
-                    if (!(eff instanceof PotionEffect)) continue;
+                    if (!eff.slot.test(slot))
+                        continue;
+                    if (!(eff instanceof PotionEffect))
+                        continue;
 
                     PotionEffect pe = (PotionEffect) eff;
                     if (pe.getPotionTypeKey().equals(potionTypeKey)) {
@@ -389,7 +398,8 @@ public class EffectManager {
      */
     public void addEquipment(Player player, ItemStack item, EquipmentSlot slot) {
         List<String> lore = getLore(item);
-        if (lore == null || player == null) return;
+        if (lore == null || player == null)
+            return;
 
         for (String line : getCached(lore)) {
             for (EquipmentEffect eff : effectsTable.get(line)) {
@@ -423,7 +433,8 @@ public class EffectManager {
         } else {
             for (String line : lore) {
                 String line_strip = line.strip();
-                if (!effectsTable.containsKey(line_strip)) continue;
+                if (!effectsTable.containsKey(line_strip))
+                    continue;
                 linesWithEffects.add(line_strip);
             }
             loreCache.put(loreKey, linesWithEffects);
@@ -533,10 +544,13 @@ public class EffectManager {
 
     @SuppressWarnings("deprecation")
     private static List<String> getLore(ItemStack item) {
-        if (item == null) return null;
-        if (!item.hasItemMeta()) return null;
+        if (item == null)
+            return null;
+        if (!item.hasItemMeta())
+            return null;
         ItemMeta meta = item.getItemMeta();
-        if (!meta.hasLore()) return null;
+        if (!meta.hasLore())
+            return null;
         return meta.getLore().stream()
                 .map(line -> ChatColor.stripColor(line))
                 .collect(Collectors.toList());
@@ -560,19 +574,24 @@ public class EffectManager {
 
         for (int idx = 0; idx < equipped.size(); idx++) {
             ItemStack item = equipped.get(idx);
-            if (item == null || item.getType() == Material.AIR) continue;
+            if (item == null || item.getType() == Material.AIR)
+                continue;
 
             List<String> lore = getLore(item);
-            if (lore == null) continue;
+            if (lore == null)
+                continue;
 
             EquipmentSlot slot = slots[idx];
 
             for (String loreline : getCached(lore)) {
                 List<EquipmentEffect> effects = effectsTable.get(loreline);
-                if (effects == null) continue;
+                if (effects == null)
+                    continue;
                 for (EquipmentEffect eff : effects) {
-                    if (!eff.slot.test(slot)) continue;
-                    if (!isEnabled.get(EquipmentEffect.getType(eff))) continue;
+                    if (!eff.slot.test(slot))
+                        continue;
+                    if (!isEnabled.get(EquipmentEffect.getType(eff)))
+                        continue;
                     expected.add(PlayerEffectTracker.getEffectId(eff));
                 }
             }
